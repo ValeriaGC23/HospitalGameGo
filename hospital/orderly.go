@@ -1,27 +1,23 @@
-// This file defines Orderly, a staff member who can carry sleeping patients
-// to a room but cannot take charge of severe cases, which require a doctor.
-// That restriction is what makes Orderly behave differently from Doctor
-// behind the same Attender interface.
+// This file defines Orderly, a staff member who carries patients to a room
+// but cannot attend severe cases. That rule is what makes an Orderly behave
+// differently from a Doctor behind the same Attender interface.
 
 package hospital
 
 import "fmt"
 
-// Orderly is a hospital orderly who attends patients with Mild or Moderate
-// narcolepsy.
+// Orderly attends patients with Mild or Moderate narcolepsy.
 type Orderly struct {
 	Person
 	available bool
 	episodes  []EpisodeRecord
 }
 
-// Orderly satisfies Attender; the assignment fails to compile otherwise.
+// This line does not compile if *Orderly stops implementing Attender.
 var _ Attender = (*Orderly)(nil)
 
-// NewOrderly builds an available orderly with the given identity.
-//
-// It returns an error wrapping ErrInvalidID, ErrInvalidName or ErrInvalidAge
-// when the identity is invalid.
+// NewOrderly builds an available orderly. It returns an error if the id,
+// name or age is not valid.
 func NewOrderly(id, name string, age int) (*Orderly, error) {
 	person, err := newPerson(id, name, age)
 	if err != nil {
@@ -30,17 +26,14 @@ func NewOrderly(id, name string, age int) (*Orderly, error) {
 	return &Orderly{Person: person, available: true}, nil
 }
 
-// IsAvailable reports whether the orderly can be dispatched.
+// IsAvailable reports whether the orderly can attend a patient now.
 func (o *Orderly) IsAvailable() bool { return o.available }
 
-// SetAvailable marks the orderly as available or unavailable for dispatch.
+// SetAvailable puts the orderly on or off duty.
 func (o *Orderly) SetAvailable(available bool) { o.available = available }
 
-// Attend attends p, who suffered a sleep attack at location.
-//
-// It returns ErrNilPatient when p is nil, ErrAttenderUnavailable when the
-// orderly is unavailable, ErrPatientNotInHallway when p is not asleep in the
-// hallway and ErrSevereNeedsDoctor when p has Severe narcolepsy.
+// Attend attends p at location. It returns ErrSevereNeedsDoctor if p has
+// Severe narcolepsy.
 func (o *Orderly) Attend(p *Patient, location string) (EpisodeRecord, error) {
 	if err := checkAttention(o, p); err != nil {
 		return EpisodeRecord{}, fmt.Errorf("orderly %q: %w", o.ID(), err)
@@ -51,13 +44,11 @@ func (o *Orderly) Attend(p *Patient, location string) (EpisodeRecord, error) {
 	return newEpisodeRecord(p, location, o), nil
 }
 
-// MyEpisodes returns a copy of the episodes this orderly attended, in
-// registration order.
+// MyEpisodes returns a copy of the episodes this orderly attended.
 func (o *Orderly) MyEpisodes() []EpisodeRecord {
 	return append([]EpisodeRecord(nil), o.episodes...)
 }
 
-// recordEpisode implements Attender.
 func (o *Orderly) recordEpisode(e EpisodeRecord) {
 	o.episodes = append(o.episodes, e)
 }

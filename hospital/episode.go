@@ -1,11 +1,6 @@
-// This file defines EpisodeRecord, the record of a single sleep attack:
-// the patient, where and when it happened, who attended it and the room
-// assigned afterwards.
-//
-// EpisodeRecord is a value type: it is copied into the hospital history and
-// into the history of the staff member who attended it, and it is never
-// modified after registration. Its fields are unexported so that callers
-// outside the package can read a record but cannot alter it.
+// This file defines EpisodeRecord, the record of one sleep attack. It is a
+// value (not a pointer) and its fields are unexported, so a record can be
+// read from outside the package but never changed.
 
 package hospital
 
@@ -18,32 +13,29 @@ type EpisodeRecord struct {
 	location   string
 	occurredAt time.Time
 	attendedBy Attender
-	room       *Room // nil when the patient stayed in the hallway
+	room       *Room // nil if the patient stayed in the hallway
 }
 
-// newEpisodeRecord builds a partial record with the data known by the staff
-// member at attention time. The Hospital sets id, occurredAt and room when it
-// registers the episode, so that ids and timestamps come from a single source
-// (its counter and its clock).
+// newEpisodeRecord is called by Attend with what the staff member knows.
+// The Hospital adds the id, the time and the room when it registers it.
 func newEpisodeRecord(p *Patient, location string, a Attender) EpisodeRecord {
 	return EpisodeRecord{patient: p, location: location, attendedBy: a}
 }
 
-// ID returns the episode identifier assigned by the Hospital (e.g. "E-001").
+// ID returns the episode id, for example "E-001".
 func (e EpisodeRecord) ID() string { return e.id }
 
-// Patient returns the patient who suffered the attack.
+// Patient returns the patient who fell asleep.
 func (e EpisodeRecord) Patient() *Patient { return e.patient }
 
 // Location returns where the attack happened.
 func (e EpisodeRecord) Location() string { return e.location }
 
-// OccurredAt returns when the episode was registered by the Hospital.
+// OccurredAt returns when the attack was registered.
 func (e EpisodeRecord) OccurredAt() time.Time { return e.occurredAt }
 
 // AttendedBy returns the staff member who attended the patient.
 func (e EpisodeRecord) AttendedBy() Attender { return e.attendedBy }
 
-// Room returns the room assigned to the patient, or nil when no room was
-// available and the patient stayed asleep in the hallway.
+// Room returns the assigned room, or nil if there was none free.
 func (e EpisodeRecord) Room() *Room { return e.room }

@@ -1,8 +1,7 @@
 // Package hospital models a hospital for patients with narcolepsy: patients,
-// their sleep episodes, room assignment and the staff that attends them.
+// their sleep episodes, the rooms and the staff that attends them.
 //
-// The package contains business logic only; it performs no printing or
-// presentation, which is the responsibility of the caller.
+// The package only contains the logic; it never prints anything.
 package hospital
 
 import (
@@ -11,13 +10,12 @@ import (
 	"time"
 )
 
-// Hospital is the aggregate root of the package: it owns the patients, the
-// staff, the rooms and the episode history, and it is the only type that
-// coordinates changes spanning more than one of them (for example, moving a
-// patient to a bed and occupying the room at the same time).
+// Hospital owns the patients, staff, rooms and episodes. Anything that
+// changes two of them together (for example a patient and a room) goes
+// through a Hospital method, so they always stay consistent.
 //
-// Collections are slices rather than maps so that every query returns its
-// results in a deterministic order (admission, hiring or registration order).
+// It uses slices instead of maps so that results always come out in the
+// same order.
 type Hospital struct {
 	name     string
 	patients []*Patient
@@ -25,14 +23,12 @@ type Hospital struct {
 	rooms    []*Room
 	episodes []EpisodeRecord
 
-	episodeSeq   int              // last episode number issued; ids are E-001, E-002, ...
-	nextAttender int              // index where the next round-robin dispatch starts
-	now          func() time.Time // clock; replaced in tests for deterministic dates
+	episodeCount int              // used to build ids E-001, E-002, ...
+	nextAttender int              // whose turn it is in the round-robin
+	now          func() time.Time // the clock; tests replace it with a fixed date
 }
 
-// NewHospital builds an empty hospital with the given name.
-//
-// It returns an error wrapping ErrInvalidName when name is blank.
+// NewHospital builds an empty hospital. It returns an error if name is empty.
 func NewHospital(name string) (*Hospital, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -44,10 +40,8 @@ func NewHospital(name string) (*Hospital, error) {
 // Name returns the hospital name.
 func (h *Hospital) Name() string { return h.name }
 
-// AdmitPatient adds p to the hospital.
-//
-// It returns ErrNilPatient when p is nil and an error wrapping ErrDuplicateID
-// when a patient with the same id was already admitted.
+// AdmitPatient adds p to the hospital. It returns ErrNilPatient or
+// ErrDuplicateID.
 func (h *Hospital) AdmitPatient(p *Patient) error {
 	if p == nil {
 		return ErrNilPatient
@@ -59,25 +53,23 @@ func (h *Hospital) AdmitPatient(p *Patient) error {
 	return nil
 }
 
-// HireAttender adds a staff member of any kind to the hospital.
-//
-// It returns ErrNilAttender when a is nil and an error wrapping
-// ErrDuplicateID when a staff member with the same id was already hired.
-// A typed nil pointer (for example (*Doctor)(nil)) is not detected here; use
-// HireDoctor for doctors, which rejects it.
+// HireAttender adds any kind of staff member. It returns ErrNilAttender or
+// ErrDuplicateID.
 func (h *Hospital) HireAttender(a Attender) error {
 	if a == nil {
 		return ErrNilAttender
 	}
-	if h.findAttender(a.ID()) != nil {
-		return fmt.Errorf("hire %q: %w", a.ID(), ErrDuplicateID)
+	for _, s := range h.staff {
+		if s.ID() == a.ID() {
+			return fmt.Errorf("hire %q: %w", a.ID(), ErrDuplicateID)
+		}
 	}
 	h.staff = append(h.staff, a)
 	return nil
 }
 
-// HireDoctor adds d to the hospital staff. It delegates to HireAttender and
-// returns the same errors; a nil d yields ErrNilAttender.
+// HireDoctor adds a doctor. It uses HireAttender, because a *Doctor is an
+// Attender.
 func (h *Hospital) HireDoctor(d *Doctor) error {
 	if d == nil {
 		return ErrNilAttender
@@ -85,10 +77,8 @@ func (h *Hospital) HireDoctor(d *Doctor) error {
 	return h.HireAttender(d)
 }
 
-// RegisterRoom adds r to the hospital.
-//
-// It returns ErrNilRoom when r is nil and an error wrapping ErrDuplicateID
-// when a room with the same id was already registered.
+// RegisterRoom adds r to the hospital. It returns ErrNilRoom or
+// ErrDuplicateID.
 func (h *Hospital) RegisterRoom(r *Room) error {
 	if r == nil {
 		return ErrNilRoom
@@ -102,111 +92,81 @@ func (h *Hospital) RegisterRoom(r *Room) error {
 	return nil
 }
 
-// Patients returns a copy of the admitted patients in admission order.
-func (h *Hospital) Patients() []*Patient {
-	return append([]*Patient(nil), h.patients...)
-}
+// Patients returns a copy of the admitted patients.
+func (h *Hospital) Patients() []*Patient { return append([]*Patient(nil), h.patients...) }
 
-// Staff returns a copy of the hired staff in hiring order.
-func (h *Hospital) Staff() []Attender {
-	return append([]Attender(nil), h.staff...)
-}
+// Staff returns a copy of the hired staff.
+func (h *Hospital) Staff() []Attender { return append([]Attender(nil), h.staff...) }
 
-// Rooms returns a copy of the registered rooms in registration order.
-func (h *Hospital) Rooms() []*Room {
-	return append([]*Room(nil), h.rooms...)
-}
+// Rooms returns a copy of the registered rooms.
+func (h *Hospital) Rooms() []*Room { return append([]*Room(nil), h.rooms...) }
 
-// Episodes returns a copy of the episode history in registration order.
-func (h *Hospital) Episodes() []EpisodeRecord {
-	return append([]EpisodeRecord(nil), h.episodes...)
-}
+// Episodes returns a copy of every registered episode.
+func (h *Hospital) Episodes() []EpisodeRecord { return append([]EpisodeRecord(nil), h.episodes...) }
 
-// HandleSleepAttack runs the full flow of a sleep attack suffered by p at
-// location: the patient falls asleep in the hallway, an available staff
-// member attends them, a room is assigned if one is free and the episode is
-// registered.
+// HandleSleepAttack runs the whole sleep attack of p at location:
 //
-// It returns ErrNilPatient or an error wrapping ErrPatientNotAdmitted when p
-// is not an admitted patient, an error wrapping the Patient.SufferSleepAttack
-// error when p cannot fall asleep, and an error wrapping
-// ErrNoAttenderAvailable when nobody can attend p; in those cases no episode
-// is registered.
+//  1. the patient falls asleep in the hallway,
+//  2. the next available staff member attends them,
+//  3. the hospital looks for a free room,
+//  4. the episode is saved.
 //
-// When no room is free the episode is still registered, with a nil Room, and
-// the returned record is accompanied by an error wrapping ErrNoRoomAvailable:
-// the attack did happen and was attended, but the patient stays asleep in the
-// hallway.
+// If no room is free, the episode is still saved (the attack did happen)
+// and the error ErrNoRoomAvailable is returned together with the record.
+// For any other error nothing is saved.
 func (h *Hospital) HandleSleepAttack(p *Patient, location string) (EpisodeRecord, error) {
-	if err := h.requireAdmitted(p); err != nil {
+	if err := h.checkAdmitted(p); err != nil {
 		return EpisodeRecord{}, err
 	}
 	if err := p.SufferSleepAttack(location); err != nil {
 		return EpisodeRecord{}, fmt.Errorf("sleep attack of %q: %w", p.ID(), err)
 	}
-	record, err := h.dispatch(p, p.Location())
+	record, err := h.dispatch(p)
 	if err != nil {
 		return EpisodeRecord{}, fmt.Errorf("sleep attack of %q: %w", p.ID(), err)
 	}
 	room, roomErr := h.AssignRoom(p)
-	return h.registerEpisode(record, room), roomErr
+	return h.saveEpisode(record, room), roomErr
 }
 
-// AssignRoom places p, who must be asleep in the hallway, in the first
-// available room in registration order and moves them to AsleepInBed.
-//
-// It returns ErrNilPatient or an error wrapping ErrPatientNotAdmitted when p
-// is not an admitted patient, an error wrapping ErrPatientNotInHallway when p
-// is in any other state, and an error wrapping ErrNoRoomAvailable when every
-// room is full. On error neither the patient nor any room changes, and no
-// room is created.
+// AssignRoom puts p, who must be asleep in the hallway, in the first free
+// room. It returns ErrNoRoomAvailable when every room is full; in that case
+// nothing changes and no room is created.
 func (h *Hospital) AssignRoom(p *Patient) (*Room, error) {
-	if err := h.requireAdmitted(p); err != nil {
+	if err := h.checkAdmitted(p); err != nil {
 		return nil, err
 	}
 	if p.State() != AsleepInHallway {
 		return nil, fmt.Errorf("assign room to %q: %w", p.ID(), ErrPatientNotInHallway)
 	}
 	for _, r := range h.rooms {
-		if r.State() != Available {
-			continue
+		if r.State() == Available {
+			r.occupy(p)
+			p.moveToBed()
+			return r, nil
 		}
-		if err := r.occupy(p); err != nil {
-			return nil, fmt.Errorf("assign room to %q: %w", p.ID(), err)
-		}
-		if err := p.moveToBed(); err != nil {
-			_ = r.release(p) // undo occupy so the room and patient stay consistent
-			return nil, fmt.Errorf("assign room to %q: %w", p.ID(), err)
-		}
-		return r, nil
 	}
 	return nil, fmt.Errorf("assign room to %q: %w", p.ID(), ErrNoRoomAvailable)
 }
 
-// WakePatient wakes p up and, if p was in a bed, releases that bed. It is the
-// only way to wake a patient, so a room can never stay occupied by an awake
-// patient.
-//
-// It returns ErrNilPatient or an error wrapping ErrPatientNotAdmitted when p
-// is not an admitted patient, and an error wrapping ErrPatientAwake or
-// ErrPatientDischarged when p is not asleep.
+// WakePatient wakes p up and frees their bed. Waking up and freeing the bed
+// happen together here, so a room never keeps an awake patient.
 func (h *Hospital) WakePatient(p *Patient) error {
-	if err := h.requireAdmitted(p); err != nil {
+	if err := h.checkAdmitted(p); err != nil {
 		return err
 	}
 	if err := p.wakeUp(); err != nil {
 		return fmt.Errorf("wake %q: %w", p.ID(), err)
 	}
-	if r := h.roomOf(p); r != nil {
-		if err := r.release(p); err != nil {
-			return fmt.Errorf("wake %q: %w", p.ID(), err)
+	for _, r := range h.rooms {
+		if r.contains(p) {
+			return r.release(p)
 		}
 	}
 	return nil
 }
 
-// PatientsInHallway returns, in admission order, the patients currently
-// asleep in the hallway. The returned slice is new on every call.
+// PatientsInHallway returns the patients asleep in the hallway.
 func (h *Hospital) PatientsInHallway() []*Patient {
 	var result []*Patient
 	for _, p := range h.patients {
@@ -217,12 +177,8 @@ func (h *Hospital) PatientsInHallway() []*Patient {
 	return result
 }
 
-// SevereReport returns, for every admitted patient with Severe narcolepsy,
-// the number of episodes they suffered today. Severe patients without
-// episodes today appear with 0, so the report lists every severe case.
-// "Today" is the calendar day of the hospital clock. The returned map is new
-// on every call; map iteration order is random, so callers that print it
-// should sort the keys.
+// SevereReport returns how many episodes each Severe patient had today.
+// Severe patients with no episodes today appear with 0.
 func (h *Hospital) SevereReport() map[*Patient]int {
 	report := make(map[*Patient]int)
 	for _, p := range h.patients {
@@ -232,46 +188,37 @@ func (h *Hospital) SevereReport() map[*Patient]int {
 	}
 	today := h.now()
 	for _, e := range h.episodes {
-		if _, severe := report[e.Patient()]; severe && sameDay(e.OccurredAt(), today) {
+		if _, isSevere := report[e.Patient()]; isSevere && sameDay(e.OccurredAt(), today) {
 			report[e.Patient()]++
 		}
 	}
 	return report
 }
 
-// dispatch asks the staff, in round-robin order starting after the last
-// staff member dispatched, to attend p. Unavailable staff are skipped, and a
-// staff member whose Attend fails (for example an Orderly with a Severe
-// patient) is passed over in favor of the next one. Round-robin spreads the
-// work instead of sending every patient to the first staff member hired.
-//
-// It returns an error wrapping ErrNoAttenderAvailable when nobody attends p.
-func (h *Hospital) dispatch(p *Patient, location string) (EpisodeRecord, error) {
-	n := len(h.staff)
-	for i := 0; i < n; i++ {
-		idx := (h.nextAttender + i) % n
-		a := h.staff[idx]
+// dispatch finds a staff member to attend p, taking turns (round-robin) so
+// that the work is shared. Staff who are unavailable, or who refuse the
+// patient (an Orderly with a Severe patient), are skipped.
+func (h *Hospital) dispatch(p *Patient) (EpisodeRecord, error) {
+	for i := 0; i < len(h.staff); i++ {
+		turn := (h.nextAttender + i) % len(h.staff)
+		a := h.staff[turn]
 		if !a.IsAvailable() {
 			continue
 		}
-		record, err := a.Attend(p, location)
-		if err != nil {
-			continue
+		record, err := a.Attend(p, p.Location())
+		if err == nil {
+			h.nextAttender = turn + 1
+			return record, nil
 		}
-		h.nextAttender = (idx + 1) % n
-		return record, nil
 	}
 	return EpisodeRecord{}, ErrNoAttenderAvailable
 }
 
-// registerEpisode completes a record returned by Attend with the next
-// episode id, the current time of the hospital clock and the assigned room
-// (nil when the patient stayed in the hallway), stores it in the hospital
-// history and in the history of the staff member who attended it, and
-// returns the completed record.
-func (h *Hospital) registerEpisode(e EpisodeRecord, room *Room) EpisodeRecord {
-	h.episodeSeq++
-	e.id = fmt.Sprintf("E-%03d", h.episodeSeq)
+// saveEpisode adds the id, the time and the room to the record, and saves it
+// in the hospital history and in the history of the staff member.
+func (h *Hospital) saveEpisode(e EpisodeRecord, room *Room) EpisodeRecord {
+	h.episodeCount++
+	e.id = fmt.Sprintf("E-%03d", h.episodeCount)
 	e.occurredAt = h.now()
 	e.room = room
 	h.episodes = append(h.episodes, e)
@@ -279,11 +226,9 @@ func (h *Hospital) registerEpisode(e EpisodeRecord, room *Room) EpisodeRecord {
 	return e
 }
 
-// requireAdmitted returns ErrNilPatient when p is nil and an error wrapping
-// ErrPatientNotAdmitted when p is not this hospital's patient. Patients are
-// compared by pointer identity, so a different *Patient with the same id is
-// not considered admitted.
-func (h *Hospital) requireAdmitted(p *Patient) error {
+// checkAdmitted returns an error if p is nil or is not a patient of this
+// hospital.
+func (h *Hospital) checkAdmitted(p *Patient) error {
 	if p == nil {
 		return ErrNilPatient
 	}
@@ -293,7 +238,7 @@ func (h *Hospital) requireAdmitted(p *Patient) error {
 	return nil
 }
 
-// findPatient returns the admitted patient with the given id, or nil.
+// findPatient returns the patient with that id, or nil.
 func (h *Hospital) findPatient(id string) *Patient {
 	for _, p := range h.patients {
 		if p.ID() == id {
@@ -303,31 +248,7 @@ func (h *Hospital) findPatient(id string) *Patient {
 	return nil
 }
 
-// findAttender returns the staff member with the given id, or nil.
-func (h *Hospital) findAttender(id string) Attender {
-	for _, a := range h.staff {
-		if a.ID() == id {
-			return a
-		}
-	}
-	return nil
-}
-
-// roomOf returns the room occupied by p, or nil when p is not in a room.
-func (h *Hospital) roomOf(p *Patient) *Room {
-	for _, r := range h.rooms {
-		if r.contains(p) {
-			return r
-		}
-	}
-	return nil
-}
-
-// sameDay reports whether a and b fall on the same calendar day in the time
-// zone of b.
+// sameDay reports whether a and b are on the same calendar day.
 func sameDay(a, b time.Time) bool {
-	a = a.In(b.Location())
-	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
-	return ay == by && am == bm && ad == bd
+	return a.Year() == b.Year() && a.YearDay() == b.YearDay()
 }

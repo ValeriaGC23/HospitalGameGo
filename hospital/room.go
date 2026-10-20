@@ -1,9 +1,5 @@
-// This file defines Room, a hospital room with a fixed capacity that can be
-// occupied by and released from patients.
-//
-// The room state is derived from its occupants instead of being stored, so
-// it can never disagree with them: a room is Occupied when it is full and
-// Available while it has at least one free bed.
+// This file defines Room. A room's state is calculated from its occupants,
+// so it can never say "Available" while every bed is taken.
 
 package hospital
 
@@ -19,10 +15,8 @@ type Room struct {
 	occupants []*Patient
 }
 
-// NewRoom builds an empty room with the given id and number of beds.
-//
-// It returns an error wrapping ErrInvalidID when id is blank, or
-// ErrInvalidCapacity when capacity is less than 1.
+// NewRoom builds an empty room. It returns an error if the id is empty or
+// the capacity is less than 1.
 func NewRoom(id string, capacity int) (*Room, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -34,13 +28,13 @@ func NewRoom(id string, capacity int) (*Room, error) {
 	return &Room{id: id, capacity: capacity}, nil
 }
 
-// ID returns the room identifier, unique within a hospital.
+// ID returns the room identifier.
 func (r *Room) ID() string { return r.id }
 
-// Capacity returns the number of beds in the room.
+// Capacity returns the number of beds.
 func (r *Room) Capacity() int { return r.capacity }
 
-// State returns Occupied when every bed is taken and Available otherwise.
+// State returns Occupied when every bed is taken, Available otherwise.
 func (r *Room) State() RoomState {
 	if len(r.occupants) >= r.capacity {
 		return Occupied
@@ -48,36 +42,19 @@ func (r *Room) State() RoomState {
 	return Available
 }
 
-// Occupants returns a copy of the patients currently in the room, so callers
-// cannot modify the room's internal slice.
+// Occupants returns a copy of the patients in the room, so callers cannot
+// change the room's own list.
 func (r *Room) Occupants() []*Patient {
 	return append([]*Patient(nil), r.occupants...)
 }
 
-// occupy places p in a free bed. It is unexported so that only the Hospital
-// can occupy a room, together with moving the patient to the AsleepInBed
-// state.
-//
-// It returns ErrNilPatient when p is nil, ErrPatientAlreadyInRoom when p is
-// already an occupant and ErrRoomFull when no bed is free. On error the room
-// is left unchanged.
-func (r *Room) occupy(p *Patient) error {
-	switch {
-	case p == nil:
-		return ErrNilPatient
-	case r.contains(p):
-		return ErrPatientAlreadyInRoom
-	case r.State() == Occupied:
-		return ErrRoomFull
-	}
+// occupy puts p in a free bed. Only the Hospital calls it, after checking
+// that the room is Available.
+func (r *Room) occupy(p *Patient) {
 	r.occupants = append(r.occupants, p)
-	return nil
 }
 
-// release frees the bed held by p. It is unexported for the same reason as
-// occupy.
-//
-// It returns ErrPatientNotInRoom when p is not an occupant.
+// release frees p's bed. It returns ErrPatientNotInRoom if p is not here.
 func (r *Room) release(p *Patient) error {
 	for i, o := range r.occupants {
 		if o == p {
@@ -88,8 +65,7 @@ func (r *Room) release(p *Patient) error {
 	return ErrPatientNotInRoom
 }
 
-// contains reports whether p is an occupant of the room. Patients are
-// compared by pointer identity.
+// contains reports whether p is in the room.
 func (r *Room) contains(p *Patient) bool {
 	for _, o := range r.occupants {
 		if o == p {

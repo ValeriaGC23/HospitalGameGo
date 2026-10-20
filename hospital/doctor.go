@@ -1,25 +1,22 @@
-// This file defines Doctor, a staff member that attends patients during
-// sleep episodes and keeps the record of the episodes it attended.
+// This file defines Doctor, a staff member who can attend any patient.
 
 package hospital
 
 import "fmt"
 
-// Doctor is a physician who can attend any patient, whatever the level of
-// their narcolepsy.
+// Doctor is a physician. Unlike an Orderly, a Doctor attends patients of
+// every narcolepsy level.
 type Doctor struct {
 	Person
 	available bool
 	episodes  []EpisodeRecord
 }
 
-// Doctor satisfies Attender; the assignment fails to compile otherwise.
+// This line does not compile if *Doctor stops implementing Attender.
 var _ Attender = (*Doctor)(nil)
 
-// NewDoctor builds an available doctor with the given identity.
-//
-// It returns an error wrapping ErrInvalidID, ErrInvalidName or ErrInvalidAge
-// when the identity is invalid.
+// NewDoctor builds an available doctor. It returns an error if the id, name
+// or age is not valid.
 func NewDoctor(id, name string, age int) (*Doctor, error) {
 	person, err := newPerson(id, name, age)
 	if err != nil {
@@ -28,17 +25,13 @@ func NewDoctor(id, name string, age int) (*Doctor, error) {
 	return &Doctor{Person: person, available: true}, nil
 }
 
-// IsAvailable reports whether the doctor can be dispatched.
+// IsAvailable reports whether the doctor can attend a patient now.
 func (d *Doctor) IsAvailable() bool { return d.available }
 
-// SetAvailable marks the doctor as available or unavailable for dispatch.
+// SetAvailable puts the doctor on or off duty.
 func (d *Doctor) SetAvailable(available bool) { d.available = available }
 
-// Attend attends p, who suffered a sleep attack at location.
-//
-// It returns ErrNilPatient when p is nil, ErrAttenderUnavailable when the
-// doctor is unavailable and ErrPatientNotInHallway when p is not asleep in
-// the hallway.
+// Attend attends p at location.
 func (d *Doctor) Attend(p *Patient, location string) (EpisodeRecord, error) {
 	if err := checkAttention(d, p); err != nil {
 		return EpisodeRecord{}, fmt.Errorf("doctor %q: %w", d.ID(), err)
@@ -46,14 +39,12 @@ func (d *Doctor) Attend(p *Patient, location string) (EpisodeRecord, error) {
 	return newEpisodeRecord(p, location, d), nil
 }
 
-// MyEpisodes returns a copy of the episodes this doctor attended, in
-// registration order. The doctor keeps its own history, so the query does
-// not need the Hospital.
+// MyEpisodes returns a copy of the episodes this doctor attended. The doctor
+// keeps its own history, so it does not need the Hospital.
 func (d *Doctor) MyEpisodes() []EpisodeRecord {
 	return append([]EpisodeRecord(nil), d.episodes...)
 }
 
-// recordEpisode implements Attender.
 func (d *Doctor) recordEpisode(e EpisodeRecord) {
 	d.episodes = append(d.episodes, e)
 }
