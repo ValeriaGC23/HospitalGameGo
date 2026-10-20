@@ -32,7 +32,7 @@ type pace struct {
 // gamePace is slower so that the web game can be followed by eye.
 var (
 	terminalPace = pace{500 * time.Millisecond, 2 * time.Second, time.Second, 3 * time.Second}
-	gamePace     = pace{4 * time.Second, 12 * time.Second, 10 * time.Second, 25 * time.Second}
+	gamePace     = pace{8 * time.Second, 20 * time.Second, 0, 0} // the game page decides when to wake
 )
 
 // runSimulation builds the hospital of the scenario and lets the patients

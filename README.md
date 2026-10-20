@@ -70,9 +70,9 @@ Open **http://localhost:8080** in a browser (use `-addr :9000` to change the por
 1. On the welcome screen, choose how many patients (3 to 10) and the mode, then press **Start**.
 2. Patients walk around the cafeteria, waiting room, pharmacy and elevator, and **fall asleep by themselves**. The staff member who attended them walks over and carries them to a free bed, or to the hallway if every room is full.
 3. Modes (the **Auto simulation** switch, which can be changed at any time):
-   - **Auto on:** patients also **wake up by themselves**.
-   - **Auto off (manual):** patients still fall asleep by themselves, but **you wake them up**: click a patient lying in a bed and press **Wake up**. They must have spent at least **5 seconds** in the room.
-   - In both modes nobody stays asleep more than **30 seconds**.
+   - **Auto on:** patients also **wake up by themselves**, after 10 to 25 seconds lying in a room.
+   - **Auto off (manual):** patients still fall asleep by themselves, but they **never wake up alone**: click a patient lying in a bed and press **Wake up**. They must have spent at least **5 seconds** in the room.
+   - Times are real seconds, start only once the patient is lying in the bed (a room shows *Occupied* only then) and stop while the game is paused.
 4. Other actions: click an awake patient to trigger an attack; click a staff member to send them to rest (they walk to the staff room and only their head stays, click it to call them back). At least one doctor always stays on duty.
 5. **Pause** freezes everything; **Restart** builds a new hospital and returns to the welcome screen.
 
@@ -148,4 +148,4 @@ Collections returned by methods are always copies, so callers cannot alter inter
 
 **Concurrency.** `Hospital` has a `sync.Mutex`; every exported method holds it for its whole duration, so two goroutines can never take the same bed. Exported methods never call each other (a `sync.Mutex` cannot be locked twice by the same goroutine); they share unexported helpers such as `assignRoom`. Goroutines that only need to read use `Hospital.Snapshot()`, a copy taken under the lock. They stop when a shared `stop` channel is closed, and `sync.WaitGroup` waits for all of them.
 
-**Separation of logic and view.** The game (`web.go`, `web/`) only uses the public API of `hospital`. The game rules that are about presentation (5 seconds in a room before waking a patient by hand, the animations) live in the page; the hospital rules live in package `hospital`.
+**Separation of logic and view.** The game (`web.go`, `web/`) only uses the public API of `hospital`. The game rules that depend on what is shown on screen live in the page: a patient counts as placed only once their character lies in the bed, the time in the room is counted from then, in auto mode the page wakes the patient up after 10 to 25 seconds, and in manual mode the player can wake them up after 5 seconds. In the game, the server goroutines only make patients fall asleep and move hallway patients to free rooms. The hospital rules live in package `hospital`.

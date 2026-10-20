@@ -26,19 +26,19 @@ var webFiles embed.FS
 //
 // The game has two switches:
 //   - running (Start/Pause): while it is on, every patient has a goroutine
-//     that makes them fall asleep at random times, one goroutine moves
-//     hallway patients to free rooms and another wakes anyone asleep longer
-//     than maxSleep.
-//   - auto (Auto simulation): with it on, the patients also wake up by
-//     themselves. With it off (manual mode) the player must wake them up.
+//     that makes them fall asleep at random times, and one more goroutine
+//     moves hallway patients to free rooms.
+//   - auto (Auto simulation): only stored here and sent to the page. The
+//     page wakes patients up by itself in auto mode, counting real seconds
+//     from the moment a patient is shown lying in a bed; in manual mode
+//     only the player wakes them up.
 type server struct {
 	start time.Time
 
-	mu       sync.Mutex
-	h        *hospital.Hospital // replaced on restart
-	auto     bool
-	runStop  chan struct{} // nil while the game is paused
-	autoStop chan struct{} // nil while the patient goroutines are not running
+	mu      sync.Mutex
+	h       *hospital.Hospital // replaced on restart
+	auto    bool
+	runStop chan struct{} // nil while the game is paused
 }
 
 // roster lists every patient the game can use: the 5 demo patients first,
@@ -212,25 +212,20 @@ func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAuto switches between auto mode (patients wake up by themselves)
-// and manual mode (the player wakes them up). The patient goroutines are
-// restarted so they pick up the new mode.
+// and manual mode (only the player wakes them up).
 func (s *server) handleAuto(w http.ResponseWriter, r *http.Request) {
 	req, ok := readRequest(w, r)
 	if !ok {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.auto = req.On
-	if s.runStop != nil {
-		s.stopPatients()
-		s.startPatients()
-	}
-	if s.auto {
+	s.mu.Unlock()
+	if req.On {
 		writeJSON(w, reply{true, "Auto mode: patients fall asleep and wake up by themselves."})
 		return
 	}
-	writeJSON(w, reply{true, "Manual mode: patients still fall asleep by themselves. Your job is to wake them up once they have spent 5 s in a room."})
+	writeJSON(w, reply{true, "Manual mode: patients still fall asleep by themselves, but only you wake them up (after 5 s in a room)."})
 }
 
 // isLastDoctorOnDuty reports whether id is the only doctor still on duty.
@@ -271,44 +266,26 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, reply{true, fmt.Sprintf("Hospital restarted with %d patients.", len(h.Patients()))})
 }
 
-// startRun starts every goroutine of the game. The caller holds s.mu.
+// startRun starts the goroutines of the game: one per patient that makes
+// them fall asleep (never wake up: the page does that) and one that moves
+// hallway patients to free rooms. The caller holds s.mu.
 func (s *server) startRun() {
 	if s.runStop != nil {
 		return
 	}
 	s.runStop = make(chan struct{})
+	for _, p := range s.h.Patients() {
+		go simulatePatient(s.h, p, gamePace, false, s.start, s.runStop)
+	}
 	go moveHallwayPatients(s.h, s.start, s.runStop)
-	go wakeLongSleepers(s.h, s.start, s.runStop)
-	s.startPatients()
 }
 
-// stopRun stops every goroutine of the game. The caller holds s.mu.
+// stopRun closes the stop channel, which makes every goroutine of the game
+// return. The caller holds s.mu.
 func (s *server) stopRun() {
 	if s.runStop != nil {
 		close(s.runStop)
 		s.runStop = nil
-	}
-	s.stopPatients()
-}
-
-// startPatients launches one goroutine per patient that makes them fall
-// asleep, and in auto mode also wake up. The caller holds s.mu.
-func (s *server) startPatients() {
-	if s.autoStop != nil {
-		return
-	}
-	s.autoStop = make(chan struct{})
-	for _, p := range s.h.Patients() {
-		go simulatePatient(s.h, p, gamePace, s.auto, s.start, s.autoStop)
-	}
-}
-
-// stopPatients closes their stop channel, which makes every patient
-// goroutine return. The caller holds s.mu.
-func (s *server) stopPatients() {
-	if s.autoStop != nil {
-		close(s.autoStop)
-		s.autoStop = nil
 	}
 }
 

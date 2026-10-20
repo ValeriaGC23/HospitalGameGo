@@ -187,8 +187,9 @@
       <ol>
         <li>Choose how many patients and the mode, then press <b>Start</b>.</li>
         <li>Patients walk around and <b>fall asleep by themselves</b>. The staff carries them to a free bed, or to the hallway if every room is full.</li>
-        <li><b>Auto simulation on:</b> patients also <b>wake up by themselves</b>. Just watch.</li>
-        <li><b>Auto simulation off (manual):</b> waking them up is <b>your job</b>. Click a patient in a bed and press <b>Wake up</b>; they must have spent at least <b>5 s</b> in the room.</li>
+        <li><b>Auto simulation on:</b> patients also <b>wake up by themselves</b>, after 10 to 25 s lying in a room. Just watch.</li>
+        <li><b>Auto simulation off (manual):</b> they <b>never wake up alone</b>; waking them up is <b>your job</b>. Click a patient in a bed and press <b>Wake up</b>; they must have spent at least <b>5 s</b> in the room.</li>
+        <li>Times are real seconds and start only when the patient is lying in a room; a room shows <b>Occupied</b> only then.</li>
         <li>Extra: click an awake patient to trigger an attack, or a staff member to send them to rest.</li>
         <li><b>Pause</b> freezes everything · <b>Restart</b> goes back to the welcome screen.</li>
       </ol>
@@ -210,7 +211,7 @@
       <div class="grow"><span class="pill" style="color:#dc2626">! Asleep</span><small>Just had an attack.</small></div>
       <div class="grow"><span class="pill" style="color:#15803d">+ Help</span><small>Staff picks the patient up.</small></div>
       <div class="grow"><span class="pill" style="color:#b45309">☀ Awake</span><small>Just woke up.</small></div>
-      <div class="grow"><span class="sleepbar"></span><small>Time asleep. Red near the 30 s limit, when they wake up anyway.</small></div>
+      <div class="grow"><span class="sleepbar"></span><small>Time in the room, counted only once the patient lies in the bed. Auto: when full, they wake up. Manual: green after 5 s, when you can wake them up.</small></div>
     </div>
   </section>
 
@@ -224,7 +225,10 @@
 <script>
 // ---------- Layout of the map (logical size 1000 x 660) ----------
 const W = 1000, H = 540;
-const MIN_IN_ROOM = 5; // seconds a patient must spend in a room before being woken up by hand
+const MIN_IN_ROOM = 5;      // seconds a patient must spend in a room before being woken up by hand
+const AUTO_SLEEP_MIN = 10;  // auto mode: seconds in the room before waking up by themselves...
+const AUTO_SLEEP_MAX = 25;  // ...chosen at random between these two (always under 30)
+let gameMs = 0;             // game clock in milliseconds: real time, stopped while paused
 const HALL = { x: 20, y: 206, w: 960, h: 88 };
 const HALL_Y = HALL.y + HALL.h / 2;
 const STAFF_ROOM = { x: 760, y: 20, w: 220, h: 170 };
@@ -320,6 +324,12 @@ function homeOf(s) {
   return null;
 }
 
+// placedIn returns the patients already lying in a bed of that room.
+function placedIn(roomId) {
+  return Object.values(sprites).filter((s) => s.kind === "patient" && s.inBedAt != null &&
+    s.info?.state === "AsleepInBed" && s.info.roomId === roomId);
+}
+
 // Every patient in the hallway keeps the same spot until they leave it, so
 // nobody slides along the hallway when somebody else is taken to a bed.
 let hallSeats = {}; // patient id -> spot number
@@ -333,64 +343,60 @@ function hallSeatOf(id) {
   return hallSeats[id];
 }
 
-// A sleeping patient is never moved alone: when the hospital moves them
-// from the hallway to a bed, the nearest staff member on duty walks over and
-// carries them (only a doctor for a Severe patient).
-function fetchToBed(ps) {
-  const severe = ps.info.level === "Severe";
-  const staff = Object.values(sprites)
-    .filter((s) => s.kind === "staff" && s.info?.available && !isHidden(s) && (!severe || s.info.role === "Doctor"))
-    .sort((a, b) => (a.path.length - b.path.length) || (Math.hypot(a.x - ps.x, a.y - ps.y) - Math.hypot(b.x - ps.x, b.y - ps.y)))[0];
-  if (!staff) return; // nobody can go now; try again on the next frame
-  const token = ++ps.token;
-  ps.scripted = true; ps.inBedAt = null;
-  staff.path.push(
+// ---------- Transport jobs ----------
+// A sleeping patient is never moved alone. Every patient lying asleep away
+// from their place (bed or hallway spot) is a job. Every free staff member
+// on duty takes the nearest job they are allowed to do (only doctors for
+// Severe patients), carries the patient, and then takes the next job. Jobs
+// are taken one at a time, so nobody piles up old tasks and there is always
+// someone on alert while sleeping patients are waiting.
+
+// needsTransport reports whether ps is asleep, lying away from their place
+// and not being carried.
+function needsTransport(ps) {
+  if (ps.kind !== "patient" || !ps.info || !isAsleep(ps.info.state)) return false;
+  if (ps.carrier || ps.scripted || !ps.lying) return false; // scripted: still walking to the attack spot
+  const h = homeOf(ps);
+  return !!h && Math.hypot(ps.x - h.x, ps.y - h.y) > 3;
+}
+
+function canCarry(staff, ps) {
+  return staff.info?.available && !(ps.info.level === "Severe" && staff.info.role !== "Doctor");
+}
+
+// dispatchJobs gives a job to every free staff member. The staff member who
+// attended the patient gets the job first; anybody else can take it after
+// 3 seconds. A claim that was not completed in 20 seconds is released.
+function dispatchJobs() {
+  const jobs = Object.values(sprites).filter((p) => {
+    if (!needsTransport(p)) { p.readyAt = null; return false; }
+    p.readyAt ??= gameMs;
+    if (p.claimedBy && gameMs - p.claimedAt > 20000) p.claimedBy = null;
+    return !p.claimedBy;
+  });
+  if (!jobs.length) return;
+  const free = Object.values(sprites).filter((s) => s.kind === "staff" && s.info?.available && !s.waitUntil &&
+    (!s.path.length || s.idleMove));
+  for (const staff of free) {
+    const job = jobs
+      .filter((p) => !p.claimedBy && canCarry(staff, p) && (p.preferred === staff.name || gameMs - p.readyAt > 3000))
+      .sort((a, b) => (b.preferred === staff.name) - (a.preferred === staff.name) ||
+        Math.hypot(a.x - staff.x, a.y - staff.y) - Math.hypot(b.x - staff.x, b.y - staff.y))[0];
+    if (job) carry(staff, job);
+  }
+}
+
+// carry sends staff to pick ps up and take them to their bed or hallway spot.
+function carry(staff, ps) {
+  ps.claimedBy = staff; ps.claimedAt = gameMs;
+  staff.idleMove = false;
+  staff.path = [
     { route: () => ({ x: ps.x - 20, y: ps.y }) },
     { wait: 300 },
     { call: () => {
-      if (ps.token !== token) return;
+      if (ps.claimedBy !== staff || !needsTransport(ps)) { staff.path = []; return; } // job no longer valid
+      ps.claimedBy = null; ps.carrier = staff; ps.inBedAt = null;
       staff.bubble = { text: "+ Help", until: now + 1400, color: "#15803d" };
-      ps.carrier = staff;
-    } },
-    { route: () => { const h = homeOf(ps) || ps.lastHome; return h ? { x: h.x - 20, y: h.y } : { x: staff.x, y: staff.y }; }, speed: 130 },
-    { call: () => {
-      if (ps.carrier !== staff) { if (ps.token === token) settle(ps); return; }
-      ps.carrier = null;
-      const h = homeOf(ps) || ps.lastHome; if (h) { ps.x = h.x; ps.y = h.y; }
-      settle(ps);
-    } },
-    { route: () => stationOf(staff) },
-  );
-}
-
-function stationOf(staff) {
-  return stationSlot(state.staff.findIndex((a) => a.id === staff.id));
-}
-
-// A patient just fell asleep: they walk to the place of the attack and
-// collapse, then the staff member who attended them comes and carries them
-// to their bed or to the hallway.
-function playAttack(ps, p) {
-  const token = ++ps.token;
-  const spot = zoneAt(ps.x, ps.y)?.name === p.location ? { x: ps.x, y: ps.y } : randomPointIn(zoneByName(p.location));
-  ps.scripted = true; ps.waiting = false; ps.lying = false; ps.carrier = null; ps.pendingWake = false; ps.inBedAt = null;
-  ps.path = [{ route: () => spot, speed: 200 }, { call: () => {
-    if (ps.token !== token) return;
-    ps.lying = true; ps.waiting = true; ps.bubble = { text: "! Asleep", until: now + 1800, color: "#dc2626" };
-  } }];
-
-  const ep = [...state.episodes].reverse().find((e) => e.patientName === p.name);
-  const staff = ep && Object.values(sprites).find((s) => s.kind === "staff" && s.name === ep.attendedBy);
-  if (!staff) { ps.path.push({ wait: 800 }, { call: () => settle(ps) }); return; }
-
-  staff.path.push(
-    { route: () => ({ x: spot.x - 20, y: spot.y }) },
-    { until: () => ps.waiting || ps.token !== token },
-    { wait: 350 },
-    { call: () => {
-      if (ps.token !== token) return;
-      staff.bubble = { text: "+ Help", until: now + 1400, color: "#15803d" };
-      ps.path = []; ps.carrier = staff;
     } },
     { route: () => { const h = homeOf(ps) || ps.lastHome; return h ? { x: h.x - 20, y: h.y } : { x: staff.x, y: staff.y }; }, speed: 130 },
     { call: () => {
@@ -399,15 +405,33 @@ function playAttack(ps, p) {
       const h = homeOf(ps) || ps.lastHome; if (h) { ps.x = h.x; ps.y = h.y; }
       settle(ps);
     } },
-    { route: () => stationOf(staff) },
-  );
+  ];
+}
+
+function stationOf(staff) {
+  return stationSlot(state.staff.findIndex((a) => a.id === staff.id));
+}
+
+// A patient just fell asleep: they walk to the place of the attack and
+// collapse there. From then on they are a transport job.
+function playAttack(ps, p) {
+  const token = ++ps.token;
+  const spot = zoneAt(ps.x, ps.y)?.name === p.location ? { x: ps.x, y: ps.y } : randomPointIn(zoneByName(p.location));
+  const ep = [...state.episodes].reverse().find((e) => e.patientName === p.name);
+  ps.preferred = ep ? ep.attendedBy : null; // the staff member who attended them carries them first
+  ps.scripted = true; ps.lying = false; ps.carrier = null; ps.claimedBy = null; ps.pendingWake = false; ps.inBedAt = null;
+  ps.path = [{ route: () => spot, speed: 200 }, { call: () => {
+    if (ps.token !== token) return;
+    ps.lying = true; ps.scripted = false;
+    ps.bubble = { text: "! Asleep", until: now + 1800, color: "#dc2626" };
+  } }];
 }
 
 // settle ends the attack animation: the patient is now lying in their bed or
 // in the hallway. If the server woke them up while they were being carried,
 // they wake up now, after being placed, never before.
 function settle(ps) {
-  ps.scripted = false; ps.waiting = false;
+  ps.scripted = false;
   if (ps.pendingWake) {
     ps.pendingWake = false;
     ps.path = [{ wait: 700 }, { call: () => playWake(ps) }];
@@ -415,7 +439,7 @@ function settle(ps) {
 }
 
 function playWake(ps) {
-  ps.token++; ps.carrier = null; ps.lying = false; ps.scripted = false; ps.waiting = false; ps.inBedAt = null;
+  ps.token++; ps.carrier = null; ps.claimedBy = null; ps.lying = false; ps.scripted = false; ps.inBedAt = null;
   ps.bubble = { text: "☀ Awake", until: now + 1800, color: "#b45309" };
   ps.path = [{ wait: 500 }];
 }
@@ -435,15 +459,15 @@ function sync() {
       s.prev = p.state; s.info = p;
       const h = homeOf(s);
       if (h) { s.x = h.x; s.y = h.y; s.lying = true; }
+      if (p.state === "AsleepInBed") { s.inBedAt = gameMs; s.sleepFor = AUTO_SLEEP_MIN * 1000; } // already in bed when the page opened
       return;
     }
     s.info = p;
     if (p.state !== "AsleepInHallway") delete hallSeats[p.id]; // their hallway spot is free again
     if (isAsleep(p.state)) s.lastHome = homeOf(s) || s.lastHome; // remembered for a late drop
-    if (s.prev === "Awake" && isAsleep(p.state)) { s.asleepAt = Date.now(); playAttack(s, p); }
+    if (s.prev === "Awake" && isAsleep(p.state)) playAttack(s, p);
     else if (isAsleep(s.prev) && p.state === "Awake") {
-      s.asleepAt = null;
-      if (s.scripted) s.pendingWake = true; // still being carried: wake up after being placed
+      if (s.carrier) s.pendingWake = true; // still being carried: wake up after being placed
       else playWake(s);
     }
     s.prev = p.state;
@@ -455,8 +479,9 @@ function idle(s) {
   if (s.path.length || s.carrier || s.waitUntil) return;
   if (s.kind === "staff") {
     const home = stationOf(s);
-    if (Math.hypot(s.x - home.x, s.y - home.y) > 40) { s.path = [{ route: () => home }]; return; }
-    if (s.info?.available && Math.random() < 0.004) s.path = [{ x: home.x + (Math.random() * 30 - 15), y: home.y + (Math.random() * 16 - 8), speed: 30 }];
+    // walking back or strolling in the staff room can be interrupted by a job
+    if (Math.hypot(s.x - home.x, s.y - home.y) > 40) { s.path = [{ route: () => home }]; s.idleMove = true; return; }
+    if (s.info?.available && Math.random() < 0.004) { s.path = [{ x: home.x + (Math.random() * 30 - 15), y: home.y + (Math.random() * 16 - 8), speed: 30 }]; s.idleMove = true; }
     return;
   }
   const p = s.info;
@@ -464,10 +489,22 @@ function idle(s) {
   if (isAsleep(p.state)) {
     s.lying = true;
     const h = homeOf(s);
-    if (h && Math.hypot(s.x - h.x, s.y - h.y) > 3) { fetchToBed(s); return; }
-    // lying in their bed: start counting the time spent in the room
-    if (p.state === "AsleepInBed") s.inBedAt ||= Date.now();
-    else s.inBedAt = null;
+    if (h && Math.hypot(s.x - h.x, s.y - h.y) > 3) return; // waiting for a staff member (see dispatchJobs)
+    if (p.state !== "AsleepInBed") { s.inBedAt = null; return; }
+    // Lying in their bed: from now on the patient counts as placed in the
+    // room and their sleep time starts (real seconds, paused with the game).
+    if (s.inBedAt == null) {
+      s.inBedAt = gameMs;
+      s.sleepFor = (AUTO_SLEEP_MIN + Math.random() * (AUTO_SLEEP_MAX - AUTO_SLEEP_MIN)) * 1000;
+      s.wakeAsked = false;
+    }
+    // Auto mode: wake up by themselves when their sleep time is over.
+    // Manual mode: never; only the player wakes them up.
+    if (state.auto && !s.wakeAsked && gameMs - s.inBedAt >= s.sleepFor) {
+      s.wakeAsked = true;
+      fetch("/api/wake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patientId: s.id }) })
+        .then(refresh).catch(() => {});
+    }
     return;
   }
   s.lying = false;
@@ -533,10 +570,11 @@ function drawMap() {
   ctx.beginPath(); ctx.moveTo(HALL.x + 20, HALL.y + HALL.h - 10); ctx.lineTo(HALL.x + HALL.w - 20, HALL.y + HALL.h - 10); ctx.stroke(); ctx.setLineDash([]);
   label("Hallway", HALL.x + 12, HALL.y + 16, { bg: "rgba(255,255,255,.8)" });
 
-  // Rooms
+  // Rooms. A room is shown occupied only when its patient is already lying
+  // in the bed, not while the staff is still carrying them there.
   for (const r of state?.rooms || []) {
     const rr = roomRects[r.id]; if (!rr) continue;
-    const occ = r.state === "Occupied";
+    const occ = placedIn(r.id).length >= r.capacity;
     tiles(rr, occ ? "#d9dcf7" : "#e7ecf5", occ ? "#cbd0f2" : "#dbe2ee", 20);
     roundRect(rr.x, rr.y, rr.w, rr.h, 12, null, "#4b5280", 5);
     ctx.fillStyle = "#2b2f4a"; ctx.fillRect(rr.x + rr.w / 2 - 22, rr.y + rr.h - 4, 44, 8); // door
@@ -548,7 +586,7 @@ function drawMap() {
       roundRect(b.x + 2, b.y + 4, b.w, b.h, 8, "rgba(0,0,0,.12)");
       roundRect(b.x, b.y, b.w, b.h, 8, "#ffffff", "#9aa3c7", 2);
       roundRect(b.x + b.w - 26, b.y + 6, 18, b.h - 12, 5, "#e0e7ff");           // pillow
-      roundRect(b.x + 6, b.y + 6, b.w - 38, b.h - 12, 5, occ && r.occupants[i] ? "#c7d2fe" : "#eef2ff"); // blanket
+      roundRect(b.x + 6, b.y + 6, b.w - 38, b.h - 12, 5, placedIn(r.id).length > i ? "#c7d2fe" : "#eef2ff"); // blanket
     }
   }
 
@@ -616,11 +654,15 @@ function drawPerson(s) {
     label(s.bubble.text, 0, y, { size: 11, align: "center", color: s.bubble.color, bg: "#ffffff" });
   }
 
-  // sleep timer: how much of the maximum sleep time has passed
-  if (s.lying && s.asleepAt && state?.maxSleep) {
-    const k = Math.min(1, (Date.now() - s.asleepAt) / 1000 / state.maxSleep);
+  // Time in the room (only once lying in the bed). Auto: fills up until the
+  // patient wakes up by themselves. Manual: fills up in 5 s and turns green
+  // when the player may wake them up.
+  if (s.lying && s.inBedAt != null && state) {
+    const inRoom = gameMs - s.inBedAt;
+    const k = Math.min(1, inRoom / (state.auto ? s.sleepFor : MIN_IN_ROOM * 1000));
+    const color = state.auto ? (k > 0.8 ? "#f59e0b" : "#6366f1") : (k >= 1 ? "#22c55e" : "#94a3b8");
     roundRect(-16, 20, 32, 5, 3, "rgba(0,0,0,.25)");
-    roundRect(-16, 20, Math.max(3, 32 * k), 5, 3, k > 0.8 ? "#ef4444" : "#6366f1");
+    roundRect(-16, 20, Math.max(3, 32 * k), 5, 3, color);
   }
   ctx.restore();
 }
@@ -657,7 +699,11 @@ function frame(t) {
   now = t;
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
   if (state) {
-    if (playing) for (const s of Object.values(sprites)) { idle(s); step(s, dt); }
+    if (playing) {
+      gameMs += dt * 1000;
+      dispatchJobs();
+      for (const s of Object.values(sprites)) { idle(s); step(s, dt); }
+    }
     drawMap();
     const all = Object.values(sprites).sort((a, b) => a.y - b.y);
     all.filter((s) => !isHidden(s)).forEach(drawPerson);
@@ -695,9 +741,25 @@ function canWakeByHand(s) {
   const st = s.info.state;
   if (!isAsleep(st)) return { ok: false, note: "" };
   if (s.scripted) return { ok: false, note: " (after being placed)" };
-  if (st !== "AsleepInBed" || !s.inBedAt) return { ok: false, note: " (needs to be in a room)" };
-  const left = MIN_IN_ROOM - (Date.now() - s.inBedAt) / 1000;
+  if (st !== "AsleepInBed" || s.inBedAt == null) return { ok: false, note: " (needs to be in a room)" };
+  const left = MIN_IN_ROOM - (gameMs - s.inBedAt) / 1000;
   return left > 0 ? { ok: false, note: ` (in ${Math.ceil(left)} s)` } : { ok: true, note: "" };
+}
+
+// sleepNote explains in the popup where the patient is and when they wake up.
+function sleepNote(s) {
+  const st = s.info.state;
+  if (!isAsleep(st)) return "";
+  let text;
+  if (s.scripted || (st === "AsleepInBed" && s.inBedAt == null)) text = "Being taken to their place. The time starts once they are in a room.";
+  else if (st === "AsleepInHallway") text = "Waiting in the hallway for a free room. The time has not started yet.";
+  else {
+    const inRoom = Math.floor((gameMs - s.inBedAt) / 1000);
+    text = state.auto
+      ? `${inRoom} s in the room. Wakes up by themselves in ${Math.max(0, Math.ceil((s.sleepFor - (gameMs - s.inBedAt)) / 1000))} s.`
+      : `${inRoom} s in the room. Manual mode: they will not wake up until you do it.`;
+  }
+  return `<div class="meta">${text}</div>`;
 }
 
 // The open popup is redrawn twice a second so its countdowns stay current.
@@ -724,7 +786,7 @@ function showPopup(s, px, py) {
     const wake = canWakeByHand(s);
     popup.innerHTML = `<h3>${esc(info.name)}</h3><div class="meta">${esc(info.id)} · ${info.age} years${info.roomId ? " · room " + esc(info.roomId) : ""}</div>
       <div class="tags"><span class="badge lvl-${info.level}">${info.level}</span><span class="badge">${esc(info.state)}</span></div>
-      ${asleep && s.asleepAt ? `<div class="meta">Wakes up by itself in ${Math.max(0, Math.ceil(state.maxSleep - (Date.now() - s.asleepAt) / 1000))} s at most (limit ${state.maxSleep} s).</div>` : ""}
+      ${sleepNote(s)}
       <div class="btns">
         <button class="primary" ${info.state !== "Awake" || s.scripted ? "disabled" : ""} onclick="act('/api/attack',{patientId:'${info.id}',location:'${esc(zone ? zone.name : ZONES[0].name)}'})">💤 Sleep attack${zone ? " in " + esc(zone.name) : ""}</button>
         <button ${wake.ok ? "" : "disabled"} onclick="act('/api/wake',{patientId:'${info.id}'})">☀️ Wake up${wake.note}</button>
@@ -788,9 +850,9 @@ const WELCOME = `<p>Patients walk around the hospital and fall asleep without wa
     <li>The next staff member on duty walks over and carries them to a free bed.</li>
     <li>If every room is full, they stay asleep in the hallway until a bed frees up.</li>
     <li>Severe patients (red ring) can only be attended by a doctor.</li>
-    <li><b>Auto simulation:</b> patients also wake up by themselves. Just watch.</li>
-    <li><b>Manual:</b> patients still fall asleep by themselves, but <b>you</b> wake them up: click a patient in a bed and press Wake up. They must have spent at least ${MIN_IN_ROOM} seconds in the room.</li>
-    <li>Nobody sleeps more than 30 seconds: after that they wake up anyway, in both modes.</li>
+    <li><b>Auto simulation:</b> patients also wake up by themselves, after ${AUTO_SLEEP_MIN} to ${AUTO_SLEEP_MAX} seconds lying in a room. Just watch.</li>
+    <li><b>Manual:</b> patients still fall asleep by themselves, but they <b>never wake up alone</b>: click a patient in a bed and press Wake up. They must have spent at least ${MIN_IN_ROOM} seconds in the room.</li>
+    <li>Times are real seconds and only start when the patient is lying in a room. Pause stops them.</li>
   </ul>`;
 
 function renderControls() {
@@ -836,10 +898,13 @@ function renderHud() {
   const s = state;
   document.getElementById("name").textContent = s.name;
   const count = (st) => s.patients.filter((p) => p.state === st).length;
-  const free = s.rooms.filter((r) => r.state === "Available").length;
+  // "in bed" and "rooms free" follow the map: a patient counts as in bed
+  // only once they are lying in it.
+  const inBed = s.rooms.reduce((n, r) => n + placedIn(r.id).length, 0);
+  const free = s.rooms.filter((r) => placedIn(r.id).length < r.capacity).length;
   document.getElementById("chips").innerHTML = [
     ["🚶", count("Awake"), "awake"], ["🚨", count("AsleepInHallway"), "in hallway"],
-    ["💤", count("AsleepInBed"), "in bed"], ["🚪", `${free}/${s.rooms.length}`, "rooms free"], ["📋", s.episodes.length, "episodes"],
+    ["💤", inBed, "in bed"], ["🚪", `${free}/${s.rooms.length}`, "rooms free"], ["📋", s.episodes.length, "episodes"],
   ].map(([i, n, l]) => `<span class="chip">${i} <b>${n}</b> ${l}</span>`).join("");
 
   const severe = s.patients.filter((p) => p.id in s.severe);
