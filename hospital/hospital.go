@@ -2,11 +2,17 @@
 // their sleep episodes, the rooms and the staff that attends them.
 //
 // The package only contains the logic; it never prints anything.
+//
+// Hospital methods are safe to call from several goroutines at once. While
+// goroutines are running, read the state with Hospital.Snapshot and change
+// it only through Hospital methods, not by calling methods of a Patient,
+// Room or staff member directly.
 package hospital
 
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,7 +22,14 @@ import (
 //
 // It uses slices instead of maps so that results always come out in the
 // same order.
+//
+// Every exported method locks mu for its whole duration, so two goroutines
+// can never assign the same room at the same time. Exported methods never
+// call other exported methods (sync.Mutex cannot be locked twice by the
+// same goroutine); they share unexported helpers instead.
 type Hospital struct {
+	mu sync.Mutex
+
 	name     string
 	patients []*Patient
 	staff    []Attender
@@ -37,12 +50,15 @@ func NewHospital(name string) (*Hospital, error) {
 	return &Hospital{name: name, now: time.Now}, nil
 }
 
-// Name returns the hospital name.
+// Name returns the hospital name. It needs no lock because the name never
+// changes.
 func (h *Hospital) Name() string { return h.name }
 
 // AdmitPatient adds p to the hospital. It returns ErrNilPatient or
 // ErrDuplicateID.
 func (h *Hospital) AdmitPatient(p *Patient) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if p == nil {
 		return ErrNilPatient
 	}
@@ -56,30 +72,27 @@ func (h *Hospital) AdmitPatient(p *Patient) error {
 // HireAttender adds any kind of staff member. It returns ErrNilAttender or
 // ErrDuplicateID.
 func (h *Hospital) HireAttender(a Attender) error {
-	if a == nil {
-		return ErrNilAttender
-	}
-	for _, s := range h.staff {
-		if s.ID() == a.ID() {
-			return fmt.Errorf("hire %q: %w", a.ID(), ErrDuplicateID)
-		}
-	}
-	h.staff = append(h.staff, a)
-	return nil
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.hire(a)
 }
 
-// HireDoctor adds a doctor. It uses HireAttender, because a *Doctor is an
-// Attender.
+// HireDoctor adds a doctor. A *Doctor is an Attender, so it is hired like
+// any other staff member.
 func (h *Hospital) HireDoctor(d *Doctor) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if d == nil {
 		return ErrNilAttender
 	}
-	return h.HireAttender(d)
+	return h.hire(d)
 }
 
 // RegisterRoom adds r to the hospital. It returns ErrNilRoom or
 // ErrDuplicateID.
 func (h *Hospital) RegisterRoom(r *Room) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if r == nil {
 		return ErrNilRoom
 	}
@@ -93,16 +106,57 @@ func (h *Hospital) RegisterRoom(r *Room) error {
 }
 
 // Patients returns a copy of the admitted patients.
-func (h *Hospital) Patients() []*Patient { return append([]*Patient(nil), h.patients...) }
+func (h *Hospital) Patients() []*Patient {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*Patient(nil), h.patients...)
+}
 
 // Staff returns a copy of the hired staff.
-func (h *Hospital) Staff() []Attender { return append([]Attender(nil), h.staff...) }
+func (h *Hospital) Staff() []Attender {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]Attender(nil), h.staff...)
+}
 
 // Rooms returns a copy of the registered rooms.
-func (h *Hospital) Rooms() []*Room { return append([]*Room(nil), h.rooms...) }
+func (h *Hospital) Rooms() []*Room {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*Room(nil), h.rooms...)
+}
 
 // Episodes returns a copy of every registered episode.
-func (h *Hospital) Episodes() []EpisodeRecord { return append([]EpisodeRecord(nil), h.episodes...) }
+func (h *Hospital) Episodes() []EpisodeRecord {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]EpisodeRecord(nil), h.episodes...)
+}
+
+// FindPatient returns the admitted patient with that id, or
+// ErrPatientNotAdmitted.
+func (h *Hospital) FindPatient(id string) (*Patient, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if p := h.findPatient(id); p != nil {
+		return p, nil
+	}
+	return nil, fmt.Errorf("patient %q: %w", id, ErrPatientNotAdmitted)
+}
+
+// SetAttenderAvailable puts the staff member with that id on or off duty.
+// It returns ErrAttenderNotFound if there is no such staff member.
+func (h *Hospital) SetAttenderAvailable(id string, available bool) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, a := range h.staff {
+		if a.ID() == id {
+			a.SetAvailable(available)
+			return nil
+		}
+	}
+	return fmt.Errorf("staff %q: %w", id, ErrAttenderNotFound)
+}
 
 // HandleSleepAttack runs the whole sleep attack of p at location:
 //
@@ -115,6 +169,8 @@ func (h *Hospital) Episodes() []EpisodeRecord { return append([]EpisodeRecord(ni
 // and the error ErrNoRoomAvailable is returned together with the record.
 // For any other error nothing is saved.
 func (h *Hospital) HandleSleepAttack(p *Patient, location string) (EpisodeRecord, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := h.checkAdmitted(p); err != nil {
 		return EpisodeRecord{}, err
 	}
@@ -125,7 +181,7 @@ func (h *Hospital) HandleSleepAttack(p *Patient, location string) (EpisodeRecord
 	if err != nil {
 		return EpisodeRecord{}, fmt.Errorf("sleep attack of %q: %w", p.ID(), err)
 	}
-	room, roomErr := h.AssignRoom(p)
+	room, roomErr := h.assignRoom(p)
 	return h.saveEpisode(record, room), roomErr
 }
 
@@ -133,9 +189,69 @@ func (h *Hospital) HandleSleepAttack(p *Patient, location string) (EpisodeRecord
 // room. It returns ErrNoRoomAvailable when every room is full; in that case
 // nothing changes and no room is created.
 func (h *Hospital) AssignRoom(p *Patient) (*Room, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := h.checkAdmitted(p); err != nil {
 		return nil, err
 	}
+	return h.assignRoom(p)
+}
+
+// WakePatient wakes p up and frees their bed. Waking up and freeing the bed
+// happen together here, so a room never keeps an awake patient.
+func (h *Hospital) WakePatient(p *Patient) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.checkAdmitted(p); err != nil {
+		return err
+	}
+	if err := p.wakeUp(); err != nil {
+		return fmt.Errorf("wake %q: %w", p.ID(), err)
+	}
+	if r := h.roomOf(p); r != nil {
+		return r.release(p)
+	}
+	return nil
+}
+
+// PatientsInHallway returns the patients asleep in the hallway.
+func (h *Hospital) PatientsInHallway() []*Patient {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var result []*Patient
+	for _, p := range h.patients {
+		if p.State() == AsleepInHallway {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// SevereReport returns how many episodes each Severe patient had today.
+// Severe patients with no episodes today appear with 0.
+func (h *Hospital) SevereReport() map[*Patient]int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.severeReport()
+}
+
+// hire adds a to the staff. The caller holds the lock.
+func (h *Hospital) hire(a Attender) error {
+	if a == nil {
+		return ErrNilAttender
+	}
+	for _, s := range h.staff {
+		if s.ID() == a.ID() {
+			return fmt.Errorf("hire %q: %w", a.ID(), ErrDuplicateID)
+		}
+	}
+	h.staff = append(h.staff, a)
+	return nil
+}
+
+// assignRoom is AssignRoom without the lock, so HandleSleepAttack can use it
+// while it already holds the lock.
+func (h *Hospital) assignRoom(p *Patient) (*Room, error) {
 	if p.State() != AsleepInHallway {
 		return nil, fmt.Errorf("assign room to %q: %w", p.ID(), ErrPatientNotInHallway)
 	}
@@ -149,37 +265,8 @@ func (h *Hospital) AssignRoom(p *Patient) (*Room, error) {
 	return nil, fmt.Errorf("assign room to %q: %w", p.ID(), ErrNoRoomAvailable)
 }
 
-// WakePatient wakes p up and frees their bed. Waking up and freeing the bed
-// happen together here, so a room never keeps an awake patient.
-func (h *Hospital) WakePatient(p *Patient) error {
-	if err := h.checkAdmitted(p); err != nil {
-		return err
-	}
-	if err := p.wakeUp(); err != nil {
-		return fmt.Errorf("wake %q: %w", p.ID(), err)
-	}
-	for _, r := range h.rooms {
-		if r.contains(p) {
-			return r.release(p)
-		}
-	}
-	return nil
-}
-
-// PatientsInHallway returns the patients asleep in the hallway.
-func (h *Hospital) PatientsInHallway() []*Patient {
-	var result []*Patient
-	for _, p := range h.patients {
-		if p.State() == AsleepInHallway {
-			result = append(result, p)
-		}
-	}
-	return result
-}
-
-// SevereReport returns how many episodes each Severe patient had today.
-// Severe patients with no episodes today appear with 0.
-func (h *Hospital) SevereReport() map[*Patient]int {
+// severeReport is SevereReport without the lock.
+func (h *Hospital) severeReport() map[*Patient]int {
 	report := make(map[*Patient]int)
 	for _, p := range h.patients {
 		if p.Level() == Severe {
@@ -243,6 +330,16 @@ func (h *Hospital) findPatient(id string) *Patient {
 	for _, p := range h.patients {
 		if p.ID() == id {
 			return p
+		}
+	}
+	return nil
+}
+
+// roomOf returns the room where p is, or nil.
+func (h *Hospital) roomOf(p *Patient) *Room {
+	for _, r := range h.rooms {
+		if r.contains(p) {
+			return r
 		}
 	}
 	return nil

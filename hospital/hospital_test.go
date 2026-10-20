@@ -7,6 +7,7 @@ package hospital
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -432,6 +433,71 @@ func TestDuplicateIDsRejected(t *testing.T) {
 	}
 	if err := f.h.RegisterRoom(dupRoom); !errors.Is(err, ErrDuplicateID) {
 		t.Errorf("RegisterRoom error = %v, want %v", err, ErrDuplicateID)
+	}
+}
+
+// TestConcurrentUse runs many goroutines against one hospital at the same
+// time. Run it with "go test -race ./..." to also check for data races.
+// Without the mutex, two goroutines could take the same free bed.
+func TestConcurrentUse(t *testing.T) {
+	f := newFixture(t, 2, 3, true)
+	var patients []*Patient
+	for i := 0; i < 8; i++ {
+		patients = append(patients, f.admit(t, id("P", i), NarcolepsyLevel(i%3)))
+	}
+
+	var wg sync.WaitGroup
+	for _, p := range patients {
+		wg.Add(1)
+		go func(p *Patient) {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				_, _ = f.h.HandleSleepAttack(p, "Lobby")
+				_ = f.h.Snapshot()
+				_ = f.h.WakePatient(p)
+			}
+		}(p)
+	}
+	wg.Wait()
+
+	s := f.h.Snapshot()
+	for _, r := range s.Rooms {
+		if len(r.Occupants) > r.Capacity {
+			t.Errorf("room %s has %d occupants, capacity %d", r.ID, len(r.Occupants), r.Capacity)
+		}
+	}
+	for _, p := range s.Patients {
+		if p.State != Awake || p.RoomID != "" {
+			t.Errorf("patient %s ended as %v in room %q, want Awake and no room", p.ID, p.State, p.RoomID)
+		}
+	}
+}
+
+func TestSnapshot(t *testing.T) {
+	f := newFixture(t, 1, 1, false)
+	inBed := f.admit(t, "P-1", Severe)
+	inHallway := f.admit(t, "P-2", Mild)
+	if _, err := f.h.HandleSleepAttack(inBed, "Lobby"); err != nil {
+		t.Fatalf("HandleSleepAttack(inBed): %v", err)
+	}
+	_, _ = f.h.HandleSleepAttack(inHallway, "Yard")
+
+	s := f.h.Snapshot()
+
+	if len(s.Patients) != 2 || s.Patients[0].RoomID != f.rooms[0].ID() || s.Patients[1].State != AsleepInHallway {
+		t.Errorf("patients = %+v", s.Patients)
+	}
+	if len(s.Episodes) != 2 || s.Episodes[1].RoomID != "" {
+		t.Errorf("episodes = %+v", s.Episodes)
+	}
+	if s.Staff[0].Role != "Doctor" || s.Staff[0].Episodes != 2 {
+		t.Errorf("staff = %+v", s.Staff)
+	}
+	if s.SevereToday[inBed.ID()] != 1 || len(s.SevereToday) != 1 {
+		t.Errorf("severe = %v", s.SevereToday)
+	}
+	if err := f.h.SetAttenderAvailable("D-1", false); err != nil || f.h.Snapshot().Staff[0].Available {
+		t.Errorf("SetAttenderAvailable: %v", err)
 	}
 }
 

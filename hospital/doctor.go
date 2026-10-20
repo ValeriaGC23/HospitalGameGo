@@ -25,6 +25,9 @@ func NewDoctor(id, name string, age int) (*Doctor, error) {
 	return &Doctor{Person: person, available: true}, nil
 }
 
+// Role returns "Doctor".
+func (d *Doctor) Role() string { return "Doctor" }
+
 // IsAvailable reports whether the doctor can attend a patient now.
 func (d *Doctor) IsAvailable() bool { return d.available }
 

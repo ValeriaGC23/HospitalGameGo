@@ -32,6 +32,7 @@ var (
 	ErrDuplicateID         = errors.New("duplicate id")
 	ErrPatientNotAdmitted  = errors.New("patient is not admitted")
 	ErrAttenderUnavailable = errors.New("staff member is not available")
+	ErrAttenderNotFound    = errors.New("staff member not found")
 	ErrSevereNeedsDoctor   = errors.New("severe patients must be attended by a doctor")
 	ErrNoAttenderAvailable = errors.New("no staff member available")
 	ErrNoRoomAvailable     = errors.New("no room available")

@@ -8,7 +8,10 @@ package hospital
 type Attender interface {
 	ID() string
 	Name() string
+	// Role returns the kind of staff member, for example "Doctor".
+	Role() string
 	IsAvailable() bool
+	SetAvailable(available bool)
 	// Attend returns the record of the attention, or an error if this staff
 	// member cannot attend p.
 	Attend(p *Patient, location string) (EpisodeRecord, error)

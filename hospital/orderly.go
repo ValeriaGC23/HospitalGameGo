@@ -26,6 +26,9 @@ func NewOrderly(id, name string, age int) (*Orderly, error) {
 	return &Orderly{Person: person, available: true}, nil
 }
 
+// Role returns "Orderly".
+func (o *Orderly) Role() string { return "Orderly" }
+
 // IsAvailable reports whether the orderly can attend a patient now.
 func (o *Orderly) IsAvailable() bool { return o.available }
 
