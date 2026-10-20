@@ -67,8 +67,8 @@ func setUp(h *hospital.Hospital) (*cast, error) {
 		id, name string
 		age      int
 	}{
-		{"D-001", "Dra. Rosa Pertuz", 52},
-		{"D-002", "Dr. Alvaro Mendoza", 47},
+		{"D-001", "Dr. Elena Rossi", 52},
+		{"D-002", "Dr. Kenji Tanaka", 47},
 	} {
 		doctor, err := hospital.NewDoctor(d.id, d.name, d.age)
 		if err != nil {
@@ -80,7 +80,7 @@ func setUp(h *hospital.Hospital) (*cast, error) {
 		c.doctors = append(c.doctors, doctor)
 	}
 
-	orderly, err := hospital.NewOrderly("O-001", "Tono Arrieta", 35)
+	orderly, err := hospital.NewOrderly("O-001", "Lucas Moreau", 35)
 	if err != nil {
 		return nil, err
 	}
@@ -107,11 +107,11 @@ func setUp(h *hospital.Hospital) (*cast, error) {
 		age      int
 		level    hospital.NarcolepsyLevel
 	}{
-		{"P-001", "Yuranis Pacheco", 28, hospital.Severe},
-		{"P-002", "Edwin De la Hoz", 41, hospital.Moderate},
-		{"P-003", "Marelvis Rangel", 19, hospital.Mild},
-		{"P-004", "Jhon Fredy Cantillo", 63, hospital.Severe},
-		{"P-005", "Luz Dary Barraza", 35, hospital.Mild},
+		{"P-001", "Amara Okafor", 28, hospital.Severe},
+		{"P-002", "Liam O'Connor", 41, hospital.Moderate},
+		{"P-003", "Sofia Lindqvist", 19, hospital.Mild},
+		{"P-004", "Mateo Fernandez", 63, hospital.Severe},
+		{"P-005", "Priya Sharma", 35, hospital.Mild},
 	} {
 		patient, err := hospital.NewPatient(p.id, p.name, p.age, p.level)
 		if err != nil {
