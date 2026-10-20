@@ -4,7 +4,7 @@
 // Valid transitions:
 //
 //	Awake --SufferSleepAttack--> AsleepInHallway --moveToBed--> AsleepInBed
-//	AsleepInHallway, AsleepInBed --WakeUp--> Awake
+//	AsleepInHallway, AsleepInBed --wakeUp--> Awake (via Hospital.WakePatient)
 //	Awake --Discharge--> Discharged (terminal)
 //
 // Patient does not reference its Room: room occupancy is owned by the Room
@@ -69,13 +69,13 @@ func (p *Patient) SufferSleepAttack(location string) error {
 	return nil
 }
 
-// WakeUp returns a sleeping patient to the awake state and clears the
-// location. Releasing the room the patient occupied is the Hospital's
-// responsibility.
+// wakeUp returns a sleeping patient to the awake state and clears the
+// location. It is unexported because waking a patient in a bed must also
+// release the room; Hospital.WakePatient performs both steps together.
 //
 // It returns ErrPatientAwake when the patient is already awake and
 // ErrPatientDischarged when the patient has been discharged.
-func (p *Patient) WakeUp() error {
+func (p *Patient) wakeUp() error {
 	switch p.state {
 	case Awake:
 		return ErrPatientAwake

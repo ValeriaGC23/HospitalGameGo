@@ -47,6 +47,26 @@ var (
 	ErrSevereNeedsDoctor = errors.New("severe patients must be attended by a doctor")
 )
 
+// Hospital errors returned by Hospital methods.
+var (
+	// ErrNilAttender is returned when a nil staff member is hired.
+	ErrNilAttender = errors.New("staff member must not be nil")
+	// ErrNilRoom is returned when a nil room is registered.
+	ErrNilRoom = errors.New("room must not be nil")
+	// ErrDuplicateID is returned when a patient, staff member or room is
+	// added with an id already used by another entity of the same kind.
+	ErrDuplicateID = errors.New("duplicate id")
+	// ErrPatientNotAdmitted is returned when an operation receives a patient
+	// that was not admitted to the hospital.
+	ErrPatientNotAdmitted = errors.New("patient is not admitted")
+	// ErrNoRoomAvailable is returned when a patient needs a room and every
+	// room is full.
+	ErrNoRoomAvailable = errors.New("no room available")
+	// ErrNoAttenderAvailable is returned when no staff member can attend a
+	// patient.
+	ErrNoAttenderAvailable = errors.New("no staff member available")
+)
+
 // State transition errors returned by Patient methods.
 var (
 	// ErrPatientAsleep is returned when an operation requires an awake

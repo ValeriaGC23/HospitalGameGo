@@ -1,0 +1,21 @@
+# Claude Code
+CLAUDE.md
+.claude/
+
+# Go build output (binarios compilados)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test output (binarios de pruebas y perfiles de cobertura)
+*.test
+*.out
+
+# Go workspace local
+go.work
+go.work.sum
+
+# Editor (configuración local de VS Code)
+.vscode/
