@@ -1,25 +1,30 @@
 # AI Usage
 
-> Work in progress. This log is updated at every stage and finalized in stage 9.
-
 ## Tools
 
-- Claude Code (VS Code extension), model Claude Opus 5.5.
+- **Claude Code** (VS Code extension, Claude Opus 5.5) as a programming assistant.
+
+## How it was used
+
+The author organized the project: wrote the plan in `CLAUDE.md` (scope, stages, technical rules, code conventions, demo scenario, test requirements) and settled most design decisions beforehand (`Person` embedded by value, ids passed to constructors, `Attender` in episode records, `HireAttender`, `IsAvailable`, the `Hospital` orchestrating sleep attacks, the injectable clock). The author also chose the state values, the hospital name and the demo data, reviewed every stage before accepting it, and managed the Git history.
+
+Claude worked within that plan, one stage at a time: it generated the code for each stage, wrote the tests, helped find and fix errors, and explained Go concepts the author did not know yet (package-level encapsulation, value vs. pointer embedding, sentinel errors with `%w`, compile-time interface checks).
 
 ## Decisive prompts
 
-- Stage 0: "Start Stage 0 following CLAUDE.md". The project plan, rules and conventions were written beforehand in `CLAUDE.md` so that every stage is generated against the same constraints.
-- Stage 2: "Don't ask me technical questions, for these use the best practices and the instructions in the claude.md". From this point the tool decided implementation details itself and documented each decision in `CLAUDE.md` with its justification, which the author reviewed stage by stage.
+1. **"Start Stage 0 following CLAUDE.md"**: every request was answered against the author's plan, which kept the code consistent across stages.
+2. **"Don't ask me technical questions, use the best practices and the instructions in the claude.md"**: Claude made the implementation details and had to justify each one in writing, which the author used to study for the defense.
+3. **"If there is something creative that I can configure tell me"**: design was left to the rules, and presentation choices to the author.
 
-## Incorrect or non-idiomatic generated code and corrections
+## Incorrect or non-idiomatic code and corrections
 
-<!-- Format: stage, what was generated, why it was wrong, correction. -->
-
-1. **Exported `Patient.WakeUp` broke the room invariant (generated in stage 2, fixed in stage 6).** The generated `Patient` exposed `WakeUp()` publicly and only documented that releasing the room was "the Hospital's responsibility". Any caller (for example `main`) could wake a patient directly and leave their room marked `Occupied` by an awake patient. A comment cannot enforce an invariant. **Correction:** the method became unexported (`wakeUp`) and the only public entry point is `Hospital.WakePatient`, which wakes the patient and releases the bed in the same operation, the same pattern already used for `moveToBed` and `Room.occupy`/`release`.
-2. **Dead code to keep an unused import (stage 6).** The first version of `hospital.go` imported `errors` without using it and added `var _ = errors.Is` with a misleading comment just to make the file compile. This is not idiomatic: an unused import should simply be removed. **Correction:** both the import and the blank assignment were deleted.
-
-## Other issues found while using the tool
-
-- Stage 0: running `go mod edit -go=1.21` from PowerShell failed because PowerShell split the `-go=` argument. `go.mod` was written directly instead with `go 1.21`, so the project builds on any Go 1.21+ toolchain rather than requiring the locally installed 1.27.
+1. **Exported `Patient.WakeUp`.** It let a patient wake up without freeing their room. Fixed by making it unexported; waking a patient now goes only through `Hospital.WakePatient`, which also releases the bed.
+2. **Dead code for an unused import.** `var _ = errors.Is` was added only to make an unused import compile. Fixed by removing both.
+3. **Unused test variable and misleading test name.** `_ = awake` silenced an unused variable, and a test's name said the opposite of what it checked. Fixed by removing the variable and renaming the test.
 
 ## Learnings
+
+- In Go, encapsulation is per package: an unexported method protects an invariant; a comment does not.
+- Polymorphism only means something when the implementations behave differently.
+- Injecting the clock makes date-dependent code testable.
+- Generated code must be read, not just run: all three errors compiled and passed the checks.
