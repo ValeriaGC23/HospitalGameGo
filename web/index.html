@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Hospital · Game</title>
+<style>
+  :root {
+    --bg: #151829;
+    --panel: #20243a;
+    --panel-2: #282d48;
+    --line: #353b5c;
+    --text: #eef0fa;
+    --muted: #9aa1bf;
+    --brand: #7c93ff;
+    --mild: #4ade80;
+    --moderate: #fbbf24;
+    --severe: #f87171;
+    --hall: #fbbf24;
+    --bed: #a5b4fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: radial-gradient(circle at 50% 0%, #22264a, var(--bg) 60%) fixed;
+    color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 18px 16px 40px; }
+
+  /* HUD */
+  .hud { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .title { display: flex; align-items: center; gap: 10px; }
+  .title .logo {
+    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #7c93ff, #c084fc); box-shadow: 0 6px 18px rgba(124,147,255,.4); font-size: 20px;
+  }
+  .title h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+  .title small { color: var(--muted); display: block; font-size: 12px; margin-top: -2px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+    padding: 5px 12px; font-size: 13px; display: flex; gap: 6px; align-items: center; white-space: nowrap;
+  }
+  .chip b { font-variant-numeric: tabular-nums; font-size: 15px; }
+  .controls { display: flex; gap: 10px; align-items: center; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight: 600; font-size: 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; }
+  .switch input { display: none; }
+  .track { width: 38px; height: 22px; border-radius: 99px; background: var(--line); position: relative; transition: background .2s; }
+  .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .switch input:checked + .track { background: #22c55e; }
+  .switch input:checked + .track::after { transform: translateX(16px); }
+  a.link { color: var(--brand); text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap; }
+
+  /* Game */
+  .stage { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+    box-shadow: 0 20px 60px rgba(0,0,0,.45); background: #2b2f4a; }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 1000 / 540; cursor: pointer; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 2px 18px; }
+  .ctl { padding: 7px 14px; border-radius: 99px; text-align: center; }
+  .ctl.go:not(:disabled) { background: #22c55e; border-color: #22c55e; color: #052e16; }
+  .overlay {
+    position: absolute; inset: 0; display: grid; place-items: center; padding: 16px;
+    background: rgba(15, 18, 35, .62); backdrop-filter: blur(3px); z-index: 4;
+  }
+  .overlay.hidden { display: none; }
+  .overlay .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 26px 28px;
+    max-width: 420px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: pop .2s ease-out;
+  }
+  .overlay .big { font-size: 46px; line-height: 1; margin-bottom: 8px; }
+  .overlay h2 { margin: 0 0 8px; font-size: 21px; }
+  .overlay p, .overlay .ovtext { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+  .overlay .card { max-width: 470px; }
+  .overlay button { font-size: 15px; padding: 11px 20px; text-align: center; }
+  .overlay .setup { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 0 0 18px; font-weight: 600; font-size: 14px; }
+  .overlay select { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+  .overlay .rules { text-align: left; color: var(--muted); font-size: 13px; margin: -6px 0 16px; padding-left: 18px; }
+  .overlay .rules li { margin: 3px 0; }
+  .guide { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 14px; margin: 16px 0; }
+  .gcard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-width: 0; }
+  .gcard h3 { margin: 0 0 10px; font-size: 14px; }
+  .gcard ol { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .gcard ol li { margin: 0 0 6px; }
+  .gcard b { color: var(--text); }
+  .grow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .grow:first-of-type { border-top: none; }
+  .grow > span { flex: none; }
+  .grow small { color: var(--muted); display: block; font-size: 12px; line-height: 1.35; }
+  .ring { width: 22px; height: 11px; border-radius: 50%; border: 3px solid; display: inline-block; }
+  @media (max-width: 1000px) { .guide { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px) { .guide { grid-template-columns: 1fr; } }
+  .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+  .pill { background: #fff; border-radius: 6px; padding: 0 6px; font-weight: 700; font-size: 11px; }
+  .sleepbar { width: 32px; height: 5px; border-radius: 3px; display: inline-block;
+    background: linear-gradient(90deg, #6366f1 60%, rgba(255,255,255,.2) 60%); }
+
+  /* Popup */
+  .popup {
+    position: absolute; min-width: 230px; max-width: 280px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px; box-shadow: 0 12px 36px rgba(0,0,0,.5); z-index: 5; display: none;
+    animation: pop .15s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.95); opacity: 0 } to { transform: none; opacity: 1 } }
+  .popup h3 { margin: 0 0 2px; font-size: 16px; }
+  .popup .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .popup .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .popup .btns { display: grid; gap: 6px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); }
+  .lvl-Mild { color: var(--mild); } .lvl-Moderate { color: var(--moderate); } .lvl-Severe { color: var(--severe); }
+  button {
+    font: inherit; font-size: 13px; font-weight: 600; border-radius: 10px; padding: 8px 12px; text-align: left;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--brand); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #10132a; }
+
+  /* Panels under the game */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-width: 0; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+  .panel h2 span { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, #fb923c, #ef4444); transition: width .4s; }
+  .log { max-height: 220px; overflow-y: auto; }
+  .log .row small { color: var(--muted); display: block; }
+  .eid { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 10px; z-index: 10; max-width: min(420px, calc(100vw - 32px)); }
+  .toast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--mild);
+    border-radius: 12px; padding: 12px 14px; font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.4); animation: pop .2s ease-out; }
+  .toast.err { border-left-color: var(--severe); }
+
+  @media (max-width: 760px) {
+    .panels { grid-template-columns: 1fr; }
+    .chips { order: 3; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hud">
+    <div class="title">
+      <div class="logo">🏥</div>
+      <div><h1 id="name">My Hospital</h1><small>Narcolepsy ward</small></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="controls">
+      <label class="switch" title="On: patients also wake up by themselves. Off (manual): you wake them up after 5 s in a room.">
+        Auto simulation <input type="checkbox" id="auto"><span class="track"></span>
+      </label>
+      <button class="ctl go" id="btnStart">▶ Start</button>
+      <button class="ctl" id="btnPause">⏸ Pause</button>
+      <button class="ctl" id="btnRestart">🔄 Restart</button>
+      <a class="link" href="/dashboard.html">📊 Data view</a>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="game" width="1000" height="540"></canvas>
+    <div class="popup" id="popup"></div>
+    <div class="overlay" id="overlay">
+      <div class="card">
+        <div class="big" id="ovIcon">🏥</div>
+        <h2 id="ovTitle">Welcome to My Hospital</h2>
+        <div id="ovText" class="ovtext"></div>
+        <div class="setup" id="ovSetup">
+          <label for="patientCount">Patients</label>
+          <select id="patientCount"></select>
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="auto">Auto simulation</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+        <button class="primary" id="ovBtn">▶ Start the simulation</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="guide">
+    <div class="gcard wide">
+      <h3>🎮 How to play</h3>
+      <ol>
+        <li>Choose how many patients and the mode, then press <b>Start</b>.</li>
+        <li>Patients walk around and <b>fall asleep by themselves</b>. The staff carries them to a free bed, or to the hallway if every room is full.</li>
+        <li><b>Auto simulation on:</b> patients also <b>wake up by themselves</b>. Just watch.</li>
+        <li><b>Auto simulation off (manual):</b> waking them up is <b>your job</b>. Click a patient in a bed and press <b>Wake up</b>; they must have spent at least <b>5 s</b> in the room.</li>
+        <li>Extra: click an awake patient to trigger an attack, or a staff member to send them to rest.</li>
+        <li><b>Pause</b> freezes everything · <b>Restart</b> goes back to the welcome screen.</li>
+      </ol>
+    </div>
+    <div class="gcard">
+      <h3>⭕ Patient ring = level</h3>
+      <div class="grow"><span class="ring" style="border-color:#22c55e"></span><div><b>Mild</b><small>Any staff member can help.</small></div></div>
+      <div class="grow"><span class="ring" style="border-color:#f59e0b"></span><div><b>Moderate</b><small>Any staff member can help.</small></div></div>
+      <div class="grow"><span class="ring" style="border-color:#ef4444"></span><div><b>Severe</b><small>Only a doctor. Counted in the severe report.</small></div></div>
+    </div>
+    <div class="gcard">
+      <h3>🩺 Staff</h3>
+      <div class="grow"><span class="dot" style="background:#fff;border:2px solid #ef4444"></span><div><b>Doctor</b><small>White coat. Attends anyone.</small></div></div>
+      <div class="grow"><span class="dot" style="background:#2dd4bf"></span><div><b>Orderly</b><small>Cannot attend severe patients.</small></div></div>
+      <div class="grow"><span class="dot" style="background:#fde047;border-radius:50%"></span><div><b>Off duty</b><small>Only their head stays in the staff room. Click it to call them back. One doctor always stays on duty.</small></div></div>
+    </div>
+    <div class="gcard">
+      <h3>💬 Signals</h3>
+      <div class="grow"><span class="pill" style="color:#dc2626">! Asleep</span><small>Just had an attack.</small></div>
+      <div class="grow"><span class="pill" style="color:#15803d">+ Help</span><small>Staff picks the patient up.</small></div>
+      <div class="grow"><span class="pill" style="color:#b45309">☀ Awake</span><small>Just woke up.</small></div>
+      <div class="grow"><span class="sleepbar"></span><small>Time asleep. Red near the 30 s limit, when they wake up anyway.</small></div>
+    </div>
+  </section>
+
+  <div class="panels">
+    <section class="panel"><h2>⚠️ Severe report <span>episodes today</span></h2><div id="severe"></div></section>
+    <section class="panel"><h2>✅ Cases solved by doctors <span id="epCount"></span></h2><div class="log" id="log"></div></section>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ---------- Layout of the map (logical size 1000 x 660) ----------
+const W = 1000, H = 540;
+const MIN_IN_ROOM = 5; // seconds a patient must spend in a room before being woken up by hand
+const HALL = { x: 20, y: 206, w: 960, h: 88 };
+const HALL_Y = HALL.y + HALL.h / 2;
+const STAFF_ROOM = { x: 760, y: 20, w: 220, h: 170 };
+const ROOMS_AREA = { x: 20, y: 20, w: 724, h: 170 };
+const ZONES = [
+  { name: "Cafeteria", icon: "☕", floor: "#e9d8b4", tile: "#dcc79c" },
+  { name: "Waiting room", icon: "🪑", floor: "#cfd9ec", tile: "#bfcbe3" },
+  { name: "Pharmacy", icon: "💊", floor: "#cfe9d6", tile: "#bcdcc6" },
+  { name: "Elevator", icon: "🛗", floor: "#ddd3ee", tile: "#cdc0e4" },
+];
+(function layoutZones() {
+  const gap = 12, w = (960 - 3 * gap) / 4;
+  ZONES.forEach((z, i) => Object.assign(z, { x: 20 + i * (w + gap), y: 310, w, h: 210 }));
+})();
+let roomRects = {};
+
+function layoutRooms(rooms) {
+  const gap = 14, w = (ROOMS_AREA.w - gap * (rooms.length - 1)) / Math.max(1, rooms.length);
+  roomRects = {};
+  rooms.forEach((r, i) => (roomRects[r.id] = { x: ROOMS_AREA.x + i * (w + gap), y: ROOMS_AREA.y, w, h: ROOMS_AREA.h, cap: r.capacity }));
+}
+
+function bedRect(roomId, i) {
+  const r = roomRects[roomId];
+  const h = Math.min(46, (r.h - 60) / r.cap - 8);
+  return { x: r.x + r.w / 2 - 55, y: r.y + 50 + i * (h + 8), w: 110, h };
+}
+const bedPos = (roomId, i) => { const b = bedRect(roomId, i); return { x: b.x + 62, y: b.y + b.h / 2 + 2 }; };
+const hallSlot = (i) => ({ x: 150 + i * 82, y: HALL_Y + 6 });
+const stationSlot = (i) => ({ x: STAFF_ROOM.x + 45 + (i % 3) * 65, y: STAFF_ROOM.y + 95 + Math.floor(i / 3) * 45 });
+
+function zoneByName(name) { return ZONES.find((z) => z.name === name) || ZONES[0]; }
+function zoneAt(x, y) { return ZONES.find((z) => x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h); }
+function randomPointIn(rect, pad = 28) {
+  return { x: rect.x + pad + Math.random() * (rect.w - 2 * pad), y: rect.y + pad + 14 + Math.random() * (rect.h - 2 * pad - 14) };
+}
+function area(p) { return p.y < HALL.y ? "top" : p.y < HALL.y + HALL.h ? "hall" : "bottom"; }
+
+// ---------- Sprites ----------
+const sprites = {};       // id -> sprite
+let state = null, now = performance.now();
+const COLORS = ["#f472b6", "#60a5fa", "#34d399", "#fb923c", "#a78bfa", "#facc15", "#22d3ee", "#f87171"];
+const SKIN = ["#f1c7a5", "#d9a37c", "#a8714f", "#7a4b32", "#f5d3b8"];
+
+function hash(s) { return [...s].reduce((a, c) => a * 31 + c.charCodeAt(0) >>> 0, 7); }
+
+function makeSprite(id, kind, name, x, y) {
+  const h = hash(id);
+  return { id, kind, name, x, y, path: [], speed: kind === "staff" ? 175 : 70, walk: 0, face: 1,
+    lying: false, carrier: null, token: 0, scripted: false, waiting: false, bubble: null,
+    color: COLORS[h % COLORS.length], skin: SKIN[h % SKIN.length], prev: null };
+}
+
+// Waypoints: {x,y,speed} walk, {route: fn} walk through the hallway if needed,
+// {wait: ms} pause, {until: fn} pause until fn() is true, {call: fn} run fn.
+function routeTo(s, to, speed) {
+  const pts = [];
+  const a = area(s), b = area(to);
+  if (a !== b || (a === "top" && Math.abs(s.x - to.x) > 30)) {
+    if (a !== "hall") pts.push({ x: s.x, y: HALL_Y, speed });
+    pts.push({ x: to.x, y: HALL_Y, speed });
+  }
+  pts.push({ x: to.x, y: to.y, speed });
+  return pts;
+}
+
+function step(s, dt) {
+  if (s.carrier) { s.x = s.carrier.x + 16 * s.carrier.face; s.y = s.carrier.y + 2; s.lying = true; return; }
+  if (s.waitUntil && now < s.waitUntil) return;
+  s.waitUntil = 0;
+  const t = s.path[0];
+  if (!t) return;
+  if (t.route) { s.path.splice(0, 1, ...routeTo(s, t.route(), t.speed)); return; }
+  if (t.wait) { s.waitUntil = now + t.wait; s.path.shift(); return; }
+  if (t.until) { t.deadline ||= now + 6000; if (t.until() || now > t.deadline) s.path.shift(); return; }
+  if (t.call) { s.path.shift(); t.call(); return; }
+  const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy), v = (t.speed || s.speed) * dt;
+  if (d <= v) { s.x = t.x; s.y = t.y; s.path.shift(); }
+  else { s.x += (dx / d) * v; s.y += (dy / d) * v; s.walk += dt * 12; if (Math.abs(dx) > 1) s.face = dx < 0 ? -1 : 1; }
+}
+
+const isAsleep = (st) => st === "AsleepInHallway" || st === "AsleepInBed";
+const patientOf = (s) => state.patients.find((p) => p.id === s.id);
+
+function homeOf(s) {
+  const p = patientOf(s);
+  if (!p) return null;
+  if (p.state === "AsleepInBed" && roomRects[p.roomId]) {
+    const room = state.rooms.find((r) => r.id === p.roomId);
+    return bedPos(p.roomId, Math.max(0, room.occupants.indexOf(p.id)));
+  }
+  if (p.state === "AsleepInHallway") return hallSlot(hallSeatOf(p.id));
+  return null;
+}
+
+// Every patient in the hallway keeps the same spot until they leave it, so
+// nobody slides along the hallway when somebody else is taken to a bed.
+let hallSeats = {}; // patient id -> spot number
+function hallSeatOf(id) {
+  if (hallSeats[id] === undefined) {
+    const used = new Set(Object.values(hallSeats));
+    let i = 0;
+    while (used.has(i)) i++;
+    hallSeats[id] = i;
+  }
+  return hallSeats[id];
+}
+
+// A sleeping patient is never moved alone: when the hospital moves them
+// from the hallway to a bed, the nearest staff member on duty walks over and
+// carries them (only a doctor for a Severe patient).
+function fetchToBed(ps) {
+  const severe = ps.info.level === "Severe";
+  const staff = Object.values(sprites)
+    .filter((s) => s.kind === "staff" && s.info?.available && !isHidden(s) && (!severe || s.info.role === "Doctor"))
+    .sort((a, b) => (a.path.length - b.path.length) || (Math.hypot(a.x - ps.x, a.y - ps.y) - Math.hypot(b.x - ps.x, b.y - ps.y)))[0];
+  if (!staff) return; // nobody can go now; try again on the next frame
+  const token = ++ps.token;
+  ps.scripted = true; ps.inBedAt = null;
+  staff.path.push(
+    { route: () => ({ x: ps.x - 20, y: ps.y }) },
+    { wait: 300 },
+    { call: () => {
+      if (ps.token !== token) return;
+      staff.bubble = { text: "+ Help", until: now + 1400, color: "#15803d" };
+      ps.carrier = staff;
+    } },
+    { route: () => { const h = homeOf(ps) || ps.lastHome; return h ? { x: h.x - 20, y: h.y } : { x: staff.x, y: staff.y }; }, speed: 130 },
+    { call: () => {
+      if (ps.carrier !== staff) { if (ps.token === token) settle(ps); return; }
+      ps.carrier = null;
+      const h = homeOf(ps) || ps.lastHome; if (h) { ps.x = h.x; ps.y = h.y; }
+      settle(ps);
+    } },
+    { route: () => stationOf(staff) },
+  );
+}
+
+function stationOf(staff) {
+  return stationSlot(state.staff.findIndex((a) => a.id === staff.id));
+}
+
+// A patient just fell asleep: they walk to the place of the attack and
+// collapse, then the staff member who attended them comes and carries them
+// to their bed or to the hallway.
+function playAttack(ps, p) {
+  const token = ++ps.token;
+  const spot = zoneAt(ps.x, ps.y)?.name === p.location ? { x: ps.x, y: ps.y } : randomPointIn(zoneByName(p.location));
+  ps.scripted = true; ps.waiting = false; ps.lying = false; ps.carrier = null; ps.pendingWake = false; ps.inBedAt = null;
+  ps.path = [{ route: () => spot, speed: 200 }, { call: () => {
+    if (ps.token !== token) return;
+    ps.lying = true; ps.waiting = true; ps.bubble = { text: "! Asleep", until: now + 1800, color: "#dc2626" };
+  } }];
+
+  const ep = [...state.episodes].reverse().find((e) => e.patientName === p.name);
+  const staff = ep && Object.values(sprites).find((s) => s.kind === "staff" && s.name === ep.attendedBy);
+  if (!staff) { ps.path.push({ wait: 800 }, { call: () => settle(ps) }); return; }
+
+  staff.path.push(
+    { route: () => ({ x: spot.x - 20, y: spot.y }) },
+    { until: () => ps.waiting || ps.token !== token },
+    { wait: 350 },
+    { call: () => {
+      if (ps.token !== token) return;
+      staff.bubble = { text: "+ Help", until: now + 1400, color: "#15803d" };
+      ps.path = []; ps.carrier = staff;
+    } },
+    { route: () => { const h = homeOf(ps) || ps.lastHome; return h ? { x: h.x - 20, y: h.y } : { x: staff.x, y: staff.y }; }, speed: 130 },
+    { call: () => {
+      if (ps.carrier !== staff) return;
+      ps.carrier = null;
+      const h = homeOf(ps) || ps.lastHome; if (h) { ps.x = h.x; ps.y = h.y; }
+      settle(ps);
+    } },
+    { route: () => stationOf(staff) },
+  );
+}
+
+// settle ends the attack animation: the patient is now lying in their bed or
+// in the hallway. If the server woke them up while they were being carried,
+// they wake up now, after being placed, never before.
+function settle(ps) {
+  ps.scripted = false; ps.waiting = false;
+  if (ps.pendingWake) {
+    ps.pendingWake = false;
+    ps.path = [{ wait: 700 }, { call: () => playWake(ps) }];
+  }
+}
+
+function playWake(ps) {
+  ps.token++; ps.carrier = null; ps.lying = false; ps.scripted = false; ps.waiting = false; ps.inBedAt = null;
+  ps.bubble = { text: "☀ Awake", until: now + 1800, color: "#b45309" };
+  ps.path = [{ wait: 500 }];
+}
+
+// Called after every poll: creates sprites and reacts to state changes.
+function sync() {
+  if (Object.keys(roomRects).length !== state.rooms.length) layoutRooms(state.rooms);
+  state.staff.forEach((a, i) => {
+    if (!sprites[a.id]) { const p = stationSlot(i); sprites[a.id] = makeSprite(a.id, "staff", a.name, p.x, p.y); }
+    const s = sprites[a.id]; s.info = a;
+  });
+  state.patients.forEach((p) => {
+    let s = sprites[p.id];
+    if (!s) {
+      const start = randomPointIn(ZONES[hash(p.id) % ZONES.length]);
+      s = sprites[p.id] = makeSprite(p.id, "patient", p.name, start.x, start.y);
+      s.prev = p.state; s.info = p;
+      const h = homeOf(s);
+      if (h) { s.x = h.x; s.y = h.y; s.lying = true; }
+      return;
+    }
+    s.info = p;
+    if (p.state !== "AsleepInHallway") delete hallSeats[p.id]; // their hallway spot is free again
+    if (isAsleep(p.state)) s.lastHome = homeOf(s) || s.lastHome; // remembered for a late drop
+    if (s.prev === "Awake" && isAsleep(p.state)) { s.asleepAt = Date.now(); playAttack(s, p); }
+    else if (isAsleep(s.prev) && p.state === "Awake") {
+      s.asleepAt = null;
+      if (s.scripted) s.pendingWake = true; // still being carried: wake up after being placed
+      else playWake(s);
+    }
+    s.prev = p.state;
+  });
+}
+
+// Idle behavior when nothing is scripted.
+function idle(s) {
+  if (s.path.length || s.carrier || s.waitUntil) return;
+  if (s.kind === "staff") {
+    const home = stationOf(s);
+    if (Math.hypot(s.x - home.x, s.y - home.y) > 40) { s.path = [{ route: () => home }]; return; }
+    if (s.info?.available && Math.random() < 0.004) s.path = [{ x: home.x + (Math.random() * 30 - 15), y: home.y + (Math.random() * 16 - 8), speed: 30 }];
+    return;
+  }
+  const p = s.info;
+  if (!p || s.scripted) return;
+  if (isAsleep(p.state)) {
+    s.lying = true;
+    const h = homeOf(s);
+    if (h && Math.hypot(s.x - h.x, s.y - h.y) > 3) { fetchToBed(s); return; }
+    // lying in their bed: start counting the time spent in the room
+    if (p.state === "AsleepInBed") s.inBedAt ||= Date.now();
+    else s.inBedAt = null;
+    return;
+  }
+  s.lying = false;
+  if (p.state === "Awake") {
+    const z = Math.random() < 0.7 ? (zoneAt(s.x, s.y) || ZONES[0]) : ZONES[Math.floor(Math.random() * ZONES.length)];
+    s.path = [{ route: () => randomPointIn(z) }, { wait: 800 + Math.random() * 2500 }];
+  }
+}
+
+// ---------- Drawing ----------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener("resize", resize);
+
+function roundRect(x, y, w, h, r, fill, stroke, lw = 2) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+
+function tiles(r, a, b, size = 24) {
+  ctx.save(); ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 12); ctx.clip();
+  ctx.fillStyle = a; ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = b;
+  for (let y = r.y; y < r.y + r.h; y += size)
+    for (let x = r.x + (((y - r.y) / size) % 2) * size; x < r.x + r.w; x += size * 2) ctx.fillRect(x, y, size, size);
+  ctx.restore();
+}
+
+function label(text, x, y, opts = {}) {
+  ctx.font = `${opts.weight || 700} ${opts.size || 13}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = opts.align || "left"; ctx.textBaseline = "middle";
+  if (opts.bg) {
+    const w = ctx.measureText(text).width + 10;
+    const bx = opts.align === "center" ? x - w / 2 : x - 5;
+    roundRect(bx, y - 9, w, 18, 6, opts.bg);
+  }
+  ctx.fillStyle = opts.color || "#1b1f33"; ctx.fillText(text, x, y);
+}
+
+function drawMap() {
+  ctx.fillStyle = "#2b2f4a"; ctx.fillRect(0, 0, W, H);
+
+  // Zones
+  for (const z of ZONES) {
+    tiles(z, z.floor, z.tile);
+    roundRect(z.x, z.y, z.w, z.h, 12, null, "rgba(0,0,0,.18)", 3);
+    ctx.font = "26px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText(z.icon, z.x + z.w - 10, z.y + 8);
+    label(z.name, z.x + 12, z.y + 18, { size: 13, bg: "rgba(255,255,255,.75)" });
+  }
+
+  // Hallway
+  tiles(HALL, "#e8e2d4", "#ddd5c3", 22);
+  roundRect(HALL.x, HALL.y, HALL.w, HALL.h, 12, null, "rgba(0,0,0,.18)", 3);
+  ctx.strokeStyle = "rgba(251,191,36,.7)"; ctx.setLineDash([14, 10]); ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(HALL.x + 20, HALL.y + HALL.h - 10); ctx.lineTo(HALL.x + HALL.w - 20, HALL.y + HALL.h - 10); ctx.stroke(); ctx.setLineDash([]);
+  label("Hallway", HALL.x + 12, HALL.y + 16, { bg: "rgba(255,255,255,.8)" });
+
+  // Rooms
+  for (const r of state?.rooms || []) {
+    const rr = roomRects[r.id]; if (!rr) continue;
+    const occ = r.state === "Occupied";
+    tiles(rr, occ ? "#d9dcf7" : "#e7ecf5", occ ? "#cbd0f2" : "#dbe2ee", 20);
+    roundRect(rr.x, rr.y, rr.w, rr.h, 12, null, "#4b5280", 5);
+    ctx.fillStyle = "#2b2f4a"; ctx.fillRect(rr.x + rr.w / 2 - 22, rr.y + rr.h - 4, 44, 8); // door
+    label(r.id, rr.x + 12, rr.y + 18, { size: 14, bg: "rgba(255,255,255,.85)" });
+    label(occ ? "Occupied" : "Available", rr.x + rr.w - 12, rr.y + 18,
+      { size: 11, align: "right", color: occ ? "#4338ca" : "#15803d", bg: occ ? "#e0e7ff" : "#dcfce7" });
+    for (let i = 0; i < r.capacity; i++) {
+      const b = bedRect(r.id, i);
+      roundRect(b.x + 2, b.y + 4, b.w, b.h, 8, "rgba(0,0,0,.12)");
+      roundRect(b.x, b.y, b.w, b.h, 8, "#ffffff", "#9aa3c7", 2);
+      roundRect(b.x + b.w - 26, b.y + 6, 18, b.h - 12, 5, "#e0e7ff");           // pillow
+      roundRect(b.x + 6, b.y + 6, b.w - 38, b.h - 12, 5, occ && r.occupants[i] ? "#c7d2fe" : "#eef2ff"); // blanket
+    }
+  }
+
+  // Staff room
+  tiles(STAFF_ROOM, "#d6efe9", "#c5e6de", 20);
+  roundRect(STAFF_ROOM.x, STAFF_ROOM.y, STAFF_ROOM.w, STAFF_ROOM.h, 12, null, "#3f7d72", 5);
+  ctx.fillStyle = "#2b2f4a"; ctx.fillRect(STAFF_ROOM.x + STAFF_ROOM.w / 2 - 22, STAFF_ROOM.y + STAFF_ROOM.h - 4, 44, 8);
+  label("Staff room", STAFF_ROOM.x + 12, STAFF_ROOM.y + 18, { bg: "rgba(255,255,255,.85)" });
+  ctx.font = "22px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🩺", STAFF_ROOM.x + STAFF_ROOM.w - 10, STAFF_ROOM.y + 8);
+}
+
+const LEVEL_COLOR = { Mild: "#22c55e", Moderate: "#f59e0b", Severe: "#ef4444" };
+
+function drawPerson(s) {
+  const staff = s.kind === "staff";
+  const off = staff && s.info && !s.info.available;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  if (off) ctx.globalAlpha = 0.45;
+
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,.22)";
+  ctx.beginPath(); ctx.ellipse(0, 12, s.lying ? 20 : 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+  if (!staff && s.info) { // level ring
+    ctx.strokeStyle = LEVEL_COLOR[s.info.level]; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(0, 12, s.lying ? 24 : 15, 7, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  const body = staff ? (s.info?.role === "Doctor" ? "#ffffff" : "#2dd4bf") : s.color;
+  if (s.lying) {
+    roundRect(-16, -2, 30, 13, 6, body, "rgba(0,0,0,.25)", 1.5);
+    ctx.fillStyle = s.skin; ctx.beginPath(); ctx.arc(-20 + (s.carrier ? 0 : 0), 4, 8, 0, Math.PI * 2); ctx.fill();
+    // zzz
+    const t = now / 500;
+    ctx.font = "800 12px 'Segoe UI', sans-serif"; ctx.fillStyle = "#6366f1"; ctx.textAlign = "center";
+    for (let i = 0; i < 3; i++) {
+      const k = (t + i * 0.6) % 1.8;
+      ctx.globalAlpha = (off ? 0.45 : 1) * Math.max(0, 1 - k / 1.8);
+      ctx.fillText("z", -12 + i * 7 + k * 4, -10 - k * 14);
+    }
+    ctx.globalAlpha = off ? 0.45 : 1;
+  } else {
+    const swing = s.path.length && !s.waitUntil ? Math.sin(s.walk) * 4 : 0;
+    ctx.fillStyle = "#3b3f5c";                         // legs
+    ctx.fillRect(-6, 6, 4, 8 + swing); ctx.fillRect(2, 6, 4, 8 - swing);
+    roundRect(-9, -10, 18, 19, 6, body, "rgba(0,0,0,.25)", 1.5); // torso
+    if (staff) {
+      if (s.info?.role === "Doctor") { ctx.fillStyle = "#ef4444"; ctx.fillRect(-2, -6, 4, 10); ctx.fillRect(-5, -3, 10, 4); }
+      else { ctx.fillStyle = "#0f766e"; ctx.fillRect(-9, -2, 18, 3); }
+    }
+    ctx.fillStyle = s.skin; ctx.beginPath(); ctx.arc(0, -17, 8, 0, Math.PI * 2); ctx.fill(); // head
+    ctx.fillStyle = "#1f2337"; ctx.fillRect(-3 + s.face * 2, -18, 2, 2); ctx.fillRect(2 + s.face * 2, -18, 2, 2); // eyes
+    if (staff) { ctx.fillStyle = s.info?.role === "Doctor" ? "#93c5fd" : "#0f766e"; ctx.beginPath(); ctx.arc(0, -21, 8, Math.PI, 0); ctx.fill(); } // cap
+  }
+
+  // name
+  const first = s.name.replace(/^(Dr\.|Dra\.)\s*/, "").split(" ")[0];
+  const text = staff ? (s.info?.role === "Doctor" ? "Dr. " + first : first) + (off ? " · off" : "") : first;
+  label(text, 0, s.lying ? -26 : -36, { size: 11, align: "center", color: "#fff", bg: staff ? "rgba(15,118,110,.9)" : "rgba(27,31,51,.8)" });
+
+  // bubble
+  if (s.bubble && now < s.bubble.until) {
+    const y = (s.lying ? -46 : -56) - Math.sin((s.bubble.until - now) / 150) * 2;
+    label(s.bubble.text, 0, y, { size: 11, align: "center", color: s.bubble.color, bg: "#ffffff" });
+  }
+
+  // sleep timer: how much of the maximum sleep time has passed
+  if (s.lying && s.asleepAt && state?.maxSleep) {
+    const k = Math.min(1, (Date.now() - s.asleepAt) / 1000 / state.maxSleep);
+    roundRect(-16, 20, 32, 5, 3, "rgba(0,0,0,.25)");
+    roundRect(-16, 20, Math.max(3, 32 * k), 5, 3, k > 0.8 ? "#ef4444" : "#6366f1");
+  }
+  ctx.restore();
+}
+
+// An off-duty staff member walks back to the staff room and then leaves the
+// map; only a "call" icon with their head stays there.
+function isHidden(s) {
+  return s.kind === "staff" && s.info && !s.info.available && s.path.length === 0 &&
+    !Object.values(sprites).some((p) => p.carrier === s);
+}
+
+function drawCallIcon(s) {
+  const pulse = 1 + Math.sin(now / 300) * 0.06;
+  ctx.save();
+  ctx.translate(s.x, s.y - 6);
+  ctx.strokeStyle = "rgba(251,191,36,.9)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, 19 * pulse, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill();
+  // the character's own head: skin, eyes and the cap of their role
+  const doctor = s.info.role === "Doctor";
+  ctx.fillStyle = s.skin; ctx.beginPath(); ctx.arc(0, 3, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#1f2337"; ctx.fillRect(-4, 2, 2, 2); ctx.fillRect(2, 2, 2, 2);
+  ctx.fillStyle = doctor ? "#93c5fd" : "#0f766e"; ctx.beginPath(); ctx.arc(0, -1, 9, Math.PI, 0); ctx.fill();
+  if (doctor) { ctx.fillStyle = "#ef4444"; ctx.fillRect(-1, -8, 2, 6); ctx.fillRect(-3, -6, 6, 2); }
+  ctx.restore();
+  const first = s.name.replace(/^(Dr\.|Dra\.)\s*/, "").split(" ")[0];
+  label("📞 Call " + (doctor ? "Dr. " : "") + first, s.x, s.y + 26,
+    { size: 10, align: "center", color: "#3b2f05", bg: "rgba(253,224,71,.95)" });
+}
+
+let playing = false;
+let last = performance.now();
+function frame(t) {
+  now = t;
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  if (state) {
+    if (playing) for (const s of Object.values(sprites)) { idle(s); step(s, dt); }
+    drawMap();
+    const all = Object.values(sprites).sort((a, b) => a.y - b.y);
+    all.filter((s) => !isHidden(s)).forEach(drawPerson);
+    all.filter(isHidden).forEach(drawCallIcon);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- Interaction ----------
+const popup = document.getElementById("popup");
+let selected = null;
+
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+canvas.addEventListener("click", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * W, y = ((e.clientY - rect.top) / rect.height) * H;
+  const hit = Object.values(sprites)
+    .filter((s) => Math.hypot(s.x - x, s.y - (s.lying ? y : y + 8)) < 24)
+    .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+  if (!hit) { closePopup(); return; }
+  if (isHidden(hit)) { act("/api/staff", { staffId: hit.id, on: true }); return; }
+  selected = hit.id;
+  showPopup(hit, e.clientX - rect.left, e.clientY - rect.top);
+});
+document.addEventListener("keydown", (e) => e.key === "Escape" && closePopup());
+
+function closePopup() { popup.style.display = "none"; selected = null; }
+
+// canWakeByHand applies the rule for waking a patient by hand: they must be
+// asleep in a bed (not in the hallway, not being carried) and have spent at
+// least MIN_IN_ROOM seconds there. It returns a note explaining why not.
+function canWakeByHand(s) {
+  const st = s.info.state;
+  if (!isAsleep(st)) return { ok: false, note: "" };
+  if (s.scripted) return { ok: false, note: " (after being placed)" };
+  if (st !== "AsleepInBed" || !s.inBedAt) return { ok: false, note: " (needs to be in a room)" };
+  const left = MIN_IN_ROOM - (Date.now() - s.inBedAt) / 1000;
+  return left > 0 ? { ok: false, note: ` (in ${Math.ceil(left)} s)` } : { ok: true, note: "" };
+}
+
+// The open popup is redrawn twice a second so its countdowns stay current.
+let popupAt = null;
+setInterval(() => {
+  if (selected && sprites[selected] && popupAt && popup.style.display === "block") showPopup(sprites[selected], popupAt.x, popupAt.y);
+}, 500);
+
+// lastDoctor reports whether a is the only doctor still on duty.
+function lastDoctor(a) {
+  return a.role === "Doctor" && a.available && state.staff.filter((x) => x.role === "Doctor" && x.available).length === 1;
+}
+
+function showPopup(s, px, py) {
+  const info = s.info;
+  if (s.kind === "staff") {
+    popup.innerHTML = `<h3>${esc(info.name)}</h3><div class="meta">${esc(info.id)} · ${esc(info.role)}</div>
+      <div class="tags"><span class="badge">${info.episodes} episodes</span><span class="badge" style="color:${info.available ? "var(--mild)" : "var(--muted)"}">${info.available ? "On duty" : "Off duty"}</span></div>
+      <div class="btns"><button class="primary" ${lastDoctor(info) ? "disabled" : ""} onclick="act('/api/staff',{staffId:'${info.id}',on:${!info.available}})">${info.available ? "😴 Send off duty (back to the staff room)" : "📞 Call back on duty"}</button></div>
+      ${lastDoctor(info) ? '<div class="meta" style="margin:8px 0 0">At least one doctor must stay on duty: only doctors can attend severe patients.</div>' : ""}`;
+  } else {
+    const asleep = isAsleep(info.state);
+    const zone = zoneAt(s.x, s.y);
+    const wake = canWakeByHand(s);
+    popup.innerHTML = `<h3>${esc(info.name)}</h3><div class="meta">${esc(info.id)} · ${info.age} years${info.roomId ? " · room " + esc(info.roomId) : ""}</div>
+      <div class="tags"><span class="badge lvl-${info.level}">${info.level}</span><span class="badge">${esc(info.state)}</span></div>
+      ${asleep && s.asleepAt ? `<div class="meta">Wakes up by itself in ${Math.max(0, Math.ceil(state.maxSleep - (Date.now() - s.asleepAt) / 1000))} s at most (limit ${state.maxSleep} s).</div>` : ""}
+      <div class="btns">
+        <button class="primary" ${info.state !== "Awake" || s.scripted ? "disabled" : ""} onclick="act('/api/attack',{patientId:'${info.id}',location:'${esc(zone ? zone.name : ZONES[0].name)}'})">💤 Sleep attack${zone ? " in " + esc(zone.name) : ""}</button>
+        <button ${wake.ok ? "" : "disabled"} onclick="act('/api/wake',{patientId:'${info.id}'})">☀️ Wake up${wake.note}</button>
+        <button ${info.state === "AsleepInHallway" ? "" : "disabled"} onclick="act('/api/assign',{patientId:'${info.id}'})">🛏️ Move to a room</button>
+      </div>`;
+  }
+  const stage = document.getElementById("stage").getBoundingClientRect();
+  popupAt = { x: px, y: py };
+  popup.style.display = "block";
+  popup.style.left = Math.min(Math.max(8, px + 14), stage.width - popup.offsetWidth - 8) + "px";
+  popup.style.top = Math.min(Math.max(8, py - 20), stage.height - popup.offsetHeight - 8) + "px";
+}
+
+async function act(path, body) {
+  closePopup();
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json();
+    toast(data.message, data.ok);
+  } catch { toast("Could not reach the server.", false); }
+  refresh();
+}
+
+function toast(msg, ok) {
+  const t = document.createElement("div");
+  t.className = "toast" + (ok ? "" : " err"); t.textContent = msg;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+// ---------- Start / pause / restart ----------
+const start = () => act("/api/run", { on: true });
+const pause = () => act("/api/run", { on: false });
+const setAuto = (on) => act("/api/auto", { on });
+
+// restart builds a new hospital with n patients and goes back to the
+// welcome screen, which explains the simulation again.
+async function restart(n) {
+  closePopup();
+  try {
+    const res = await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patients: n || state.patients.length }) });
+    const data = await res.json();
+    toast(data.message, data.ok);
+  } catch { toast("Could not reach the server.", false); }
+  for (const id in sprites) delete sprites[id]; // rebuild every character from the new hospital
+  roomRects = {}; hallSeats = {};
+  refresh();
+}
+
+document.getElementById("btnStart").addEventListener("click", start);
+document.getElementById("btnPause").addEventListener("click", pause);
+document.getElementById("btnRestart").addEventListener("click", () => restart());
+document.getElementById("ovBtn").addEventListener("click", start);
+document.getElementById("patientCount").addEventListener("change", (e) => restart(Number(e.target.value)));
+document.getElementById("auto").addEventListener("change", (e) => setAuto(e.target.checked));
+document.getElementById("mode").addEventListener("change", (e) => setAuto(e.target.value === "auto"));
+
+const WELCOME = `<p>Patients walk around the hospital and fall asleep without warning (narcolepsy). Then:</p>
+  <ul class="rules">
+    <li>The next staff member on duty walks over and carries them to a free bed.</li>
+    <li>If every room is full, they stay asleep in the hallway until a bed frees up.</li>
+    <li>Severe patients (red ring) can only be attended by a doctor.</li>
+    <li><b>Auto simulation:</b> patients also wake up by themselves. Just watch.</li>
+    <li><b>Manual:</b> patients still fall asleep by themselves, but <b>you</b> wake them up: click a patient in a bed and press Wake up. They must have spent at least ${MIN_IN_ROOM} seconds in the room.</li>
+    <li>Nobody sleeps more than 30 seconds: after that they wake up anyway, in both modes.</li>
+  </ul>`;
+
+function renderControls() {
+  playing = state.running;
+  document.getElementById("auto").checked = state.auto;
+  if (document.activeElement !== document.getElementById("mode")) document.getElementById("mode").value = state.auto ? "auto" : "manual";
+  const started = playing || state.episodes.length > 0;
+  const btnStart = document.getElementById("btnStart");
+  btnStart.disabled = playing;
+  btnStart.textContent = started ? "▶ Resume" : "▶ Start";
+  document.getElementById("btnPause").disabled = !playing;
+  document.getElementById("btnRestart").disabled = !started;
+
+  document.getElementById("overlay").classList.toggle("hidden", playing);
+  if (!playing) closePopup();
+  if (playing) return;
+
+  const text = document.getElementById("ovText");
+  document.getElementById("ovSetup").style.display = started ? "none" : "flex";
+  if (started) {
+    document.getElementById("ovIcon").textContent = "⏸";
+    document.getElementById("ovTitle").textContent = "Paused";
+    text.innerHTML = "Everything is frozen. Resume to continue where you left off, or restart to go back to the beginning.";
+    document.getElementById("ovBtn").textContent = "▶ Resume";
+  } else {
+    document.getElementById("ovIcon").textContent = "🏥";
+    document.getElementById("ovTitle").textContent = "Welcome to " + state.name;
+    if (text.dataset.mode !== "welcome") text.innerHTML = WELCOME;
+    document.getElementById("ovBtn").textContent = "▶ Start the simulation";
+    const sel = document.getElementById("patientCount");
+    if (document.activeElement !== sel) {
+      let opts = "";
+      for (let n = 3; n <= state.maxPatients; n++) opts += `<option value="${n}">${n} patients</option>`;
+      if (sel.dataset.max != state.maxPatients) { sel.innerHTML = opts; sel.dataset.max = state.maxPatients; }
+      sel.value = String(state.patients.length);
+    }
+  }
+  text.dataset.mode = started ? "paused" : "welcome";
+}
+
+// ---------- HUD and panels ----------
+function renderHud() {
+  const s = state;
+  document.getElementById("name").textContent = s.name;
+  const count = (st) => s.patients.filter((p) => p.state === st).length;
+  const free = s.rooms.filter((r) => r.state === "Available").length;
+  document.getElementById("chips").innerHTML = [
+    ["🚶", count("Awake"), "awake"], ["🚨", count("AsleepInHallway"), "in hallway"],
+    ["💤", count("AsleepInBed"), "in bed"], ["🚪", `${free}/${s.rooms.length}`, "rooms free"], ["📋", s.episodes.length, "episodes"],
+  ].map(([i, n, l]) => `<span class="chip">${i} <b>${n}</b> ${l}</span>`).join("");
+
+  const severe = s.patients.filter((p) => p.id in s.severe);
+  const max = Math.max(1, ...severe.map((p) => s.severe[p.id]));
+  document.getElementById("severe").innerHTML = severe.length
+    ? severe.map((p) => `<div class="row"><span style="width:140px">${esc(p.name)}</span><div class="bar"><i style="width:${(s.severe[p.id] / max) * 100}%"></i></div><b>${s.severe[p.id]}</b></div>`).join("")
+    : '<div class="empty">No severe patients.</div>';
+
+  const solved = solvedByDoctors(s);
+  document.getElementById("epCount").textContent = `${solved.length} of ${s.episodes.length} episodes`;
+  document.getElementById("log").innerHTML = solved.length
+    ? [...solved].reverse().map((e) => `<div class="row"><span class="eid">${esc(e.id)}</span><div><b>${esc(e.patientName)}</b> at ${esc(e.location)}
+        <small>${esc(e.time)} · ${esc(e.attendedBy)} · room ${esc(e.roomId)} · woke up well</small></div></div>`).join("")
+    : '<div class="empty">No solved cases yet. A case counts when a doctor took the patient to a room and the patient has woken up.</div>';
+}
+
+// solvedByDoctors keeps the episodes that were attended by a doctor, ended
+// with the patient in a room, and are finished: the patient woke up after
+// it (they are awake now, or had a later episode).
+function solvedByDoctors(s) {
+  const doctors = new Set(s.staff.filter((a) => a.role === "Doctor").map((a) => a.name));
+  const stateOf = Object.fromEntries(s.patients.map((p) => [p.name, p.state]));
+  const lastEpisode = {};
+  s.episodes.forEach((e) => (lastEpisode[e.patientName] = e.id));
+  return s.episodes.filter((e) => doctors.has(e.attendedBy) && e.roomId &&
+    (lastEpisode[e.patientName] !== e.id || stateOf[e.patientName] === "Awake"));
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/api/state");
+    const s = await res.json();
+    s.patients ||= []; s.staff ||= []; s.rooms ||= []; s.episodes ||= []; s.severe ||= {};
+    s.rooms.forEach((r) => (r.occupants ||= []));
+    state = s;
+    sync();
+    renderHud();
+    renderControls();
+  } catch { /* server stopped: keep the last frame */ }
+}
+setInterval(refresh, 700);
+refresh();
+</script>
+</body>
+</html>

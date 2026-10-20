@@ -6,10 +6,12 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"JuegoHospitalGo/hospital"
 )
@@ -30,8 +32,26 @@ type cast struct {
 	patients []*hospital.Patient
 }
 
+// main runs the demonstration scenario by default. With -simulate it runs
+// the concurrent simulation and with -web the web interface, so "go run ."
+// never changes.
 func main() {
-	if err := run(); err != nil {
+	simulate := flag.Bool("simulate", false, "run the concurrent simulation instead of the scenario")
+	duration := flag.Duration("duration", 10*time.Second, "how long the simulation runs")
+	web := flag.Bool("web", false, "start the web interface")
+	addr := flag.String("addr", ":8080", "address of the web interface")
+	flag.Parse()
+
+	var err error
+	switch {
+	case *web:
+		err = runWeb(*addr)
+	case *simulate:
+		err = runSimulation(*duration)
+	default:
+		err = run()
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -59,10 +79,43 @@ func run() error {
 	return nil
 }
 
+// patientData is the data needed to create one patient.
+type patientData struct {
+	id, name string
+	age      int
+	level    hospital.NarcolepsyLevel
+}
+
+// demoPatients are the 5 patients of the scenario, 2 of them Severe.
+// Order matters: dispatch is round-robin (doctor, doctor, orderly, ...), so
+// the third patient to fall asleep is Mild and can be attended by the
+// orderly.
+var demoPatients = []patientData{
+	{"P-001", "Amara Okafor", 28, hospital.Severe},
+	{"P-002", "Liam O'Connor", 41, hospital.Moderate},
+	{"P-003", "Sofia Lindqvist", 19, hospital.Mild},
+	{"P-004", "Mateo Fernandez", 63, hospital.Severe},
+	{"P-005", "Priya Sharma", 35, hospital.Mild},
+}
+
 // setUp performs step 1: hires 2 doctors and 1 orderly, registers 3 rooms of
-// capacity 1 and admits 5 patients, 2 of them Severe.
+// capacity 1 and admits the 5 demo patients.
 func setUp(h *hospital.Hospital) (*cast, error) {
 	c := &cast{}
+	if err := hireStaffAndRooms(h, c); err != nil {
+		return nil, err
+	}
+	if err := admitPatients(h, c, demoPatients); err != nil {
+		return nil, err
+	}
+	fmt.Printf("%s: %d staff, %d rooms, %d patients admitted\n",
+		h.Name(), len(h.Staff()), len(h.Rooms()), len(h.Patients()))
+	return c, nil
+}
+
+// hireStaffAndRooms hires 2 doctors and 1 orderly and registers 3 rooms of
+// capacity 1.
+func hireStaffAndRooms(h *hospital.Hospital, c *cast) error {
 	for _, d := range []struct {
 		id, name string
 		age      int
@@ -72,60 +125,48 @@ func setUp(h *hospital.Hospital) (*cast, error) {
 	} {
 		doctor, err := hospital.NewDoctor(d.id, d.name, d.age)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := h.HireDoctor(doctor); err != nil {
-			return nil, err
+			return err
 		}
 		c.doctors = append(c.doctors, doctor)
 	}
 
 	orderly, err := hospital.NewOrderly("O-001", "Lucas Moreau", 35)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := h.HireAttender(orderly); err != nil {
-		return nil, err
+		return err
 	}
 	c.orderly = orderly
 
 	for _, id := range []string{"R-101", "R-102", "R-103"} {
 		room, err := hospital.NewRoom(id, 1)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := h.RegisterRoom(room); err != nil {
-			return nil, err
+			return err
 		}
 	}
+	return nil
+}
 
-	// Order matters: dispatch is round-robin (doctor, doctor, orderly, ...),
-	// so the third patient to fall asleep is Mild and can be attended by
-	// the orderly.
-	for _, p := range []struct {
-		id, name string
-		age      int
-		level    hospital.NarcolepsyLevel
-	}{
-		{"P-001", "Amara Okafor", 28, hospital.Severe},
-		{"P-002", "Liam O'Connor", 41, hospital.Moderate},
-		{"P-003", "Sofia Lindqvist", 19, hospital.Mild},
-		{"P-004", "Mateo Fernandez", 63, hospital.Severe},
-		{"P-005", "Priya Sharma", 35, hospital.Mild},
-	} {
+// admitPatients creates and admits one patient per entry of list.
+func admitPatients(h *hospital.Hospital, c *cast, list []patientData) error {
+	for _, p := range list {
 		patient, err := hospital.NewPatient(p.id, p.name, p.age, p.level)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := h.AdmitPatient(patient); err != nil {
-			return nil, err
+			return err
 		}
 		c.patients = append(c.patients, patient)
 	}
-
-	fmt.Printf("%s: %d staff, %d rooms, %d patients admitted\n",
-		h.Name(), len(h.Staff()), len(h.Rooms()), len(h.Patients()))
-	return c, nil
+	return nil
 }
 
 // sleepAttacks performs step 2: four patients fall asleep in different
@@ -139,8 +180,8 @@ func sleepAttacks(h *hospital.Hospital, c *cast) error {
 	}{
 		{c.patients[0], "Cafeteria"},
 		{c.patients[1], "Waiting room"},
-		{c.patients[2], "Hammock in the courtyard"},
-		{c.patients[3], "Parking lot"},
+		{c.patients[2], "Pharmacy"},
+		{c.patients[3], "Elevator"},
 	}
 	for _, a := range attacks {
 		episode, err := h.HandleSleepAttack(a.patient, a.location)

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Hospital</title>
+<style>
+  :root {
+    --bg: #f3f5fa;
+    --panel: #ffffff;
+    --panel-2: #f7f8fc;
+    --line: #e3e7f0;
+    --text: #1b2236;
+    --muted: #6b7489;
+    --brand: #3b5bfd;
+    --brand-soft: #e8edff;
+    --mild: #16a34a;     --mild-soft: #dcfce7;
+    --moderate: #d97706; --moderate-soft: #fef3c7;
+    --severe: #dc2626;   --severe-soft: #fee2e2;
+    --hall: #f59e0b;     --hall-soft: #fff4dc;
+    --bed: #6366f1;      --bed-soft: #eef0ff;
+    --awake: #0ea5e9;    --awake-soft: #e0f4fe;
+    --shadow: 0 1px 2px rgba(20, 30, 60, .05), 0 6px 24px rgba(20, 30, 60, .06);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1220;
+      --panel: #161b2e;
+      --panel-2: #1c2238;
+      --line: #283050;
+      --text: #e7eaf5;
+      --muted: #9099b3;
+      --brand: #7c93ff;
+      --brand-soft: #232c52;
+      --mild-soft: #143322;
+      --moderate-soft: #3a2a0d;
+      --severe-soft: #3d1717;
+      --hall-soft: #3a2c0c;
+      --bed-soft: #252a55;
+      --awake-soft: #0f2f40;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 24px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .logo {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--brand), #8b5cf6);
+    display: grid; place-items: center; color: #fff;
+    box-shadow: 0 8px 20px rgba(59, 91, 253, .35);
+  }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -.02em; }
+  .subtitle { color: var(--muted); font-size: 14px; }
+  .spacer { flex: 1; }
+  .clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; }
+
+  /* Switch */
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; font-weight: 600; }
+  .switch input { display: none; }
+  .track {
+    width: 44px; height: 24px; border-radius: 99px; background: var(--line);
+    position: relative; transition: background .2s;
+  }
+  .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .track { background: var(--brand); }
+  .switch input:checked + .track::after { transform: translateX(20px); }
+  .auto-box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+    padding: 8px 16px; box-shadow: var(--shadow);
+  }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .live-dot.on { background: #22c55e; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)} 100%{box-shadow:0 0 0 10px rgba(34,197,94,0)} }
+
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 20px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; box-shadow: var(--shadow); display: flex; gap: 12px; align-items: center;
+  }
+  .stat .icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; flex: none; }
+  .stat .num { font-size: 26px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .lbl { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  /* Layout */
+  .grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start; }
+  .col { display: grid; gap: 20px; min-width: 0; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px; min-width: 0;
+  }
+  .panel h2 {
+    font-size: 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .panel h2 .count {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+    font-size: 12px; padding: 1px 8px; border-radius: 99px; font-weight: 600;
+  }
+  .panel h2 .right { margin-left: auto; font-weight: 400; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+
+  /* Rooms */
+  .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .room {
+    border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--panel-2);
+    position: relative; overflow: hidden; transition: border-color .3s, background .3s;
+  }
+  .room.occupied { border-color: color-mix(in srgb, var(--bed) 45%, var(--line)); background: var(--bed-soft); }
+  .room .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .room .rid { font-weight: 700; font-size: 17px; }
+  .bed {
+    display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px;
+    background: var(--panel); border: 1px dashed var(--line); min-height: 52px; margin-top: 8px;
+  }
+  .bed.full { border-style: solid; border-color: transparent; }
+  .bed .empty { color: var(--muted); font-size: 13px; }
+
+  /* Hallway */
+  .hallway {
+    min-height: 78px; border-radius: 14px; padding: 12px;
+    background: repeating-linear-gradient(135deg, var(--hall-soft), var(--hall-soft) 14px, transparent 14px, transparent 28px);
+    border: 1px solid color-mix(in srgb, var(--hall) 35%, var(--line));
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+  .hallway .none { color: var(--muted); font-size: 14px; padding: 0 6px; }
+  .sleeper {
+    display: flex; align-items: center; gap: 10px; background: var(--panel); border-radius: 12px;
+    padding: 8px 12px; box-shadow: var(--shadow);
+  }
+  @keyframes drop { from { transform: translateY(-6px); opacity: 0 } to { transform: none; opacity: 1 } }
+
+  /* Avatar + zzz */
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 700; font-size: 13px; color: #fff; flex: none; position: relative;
+  }
+  .zzz { position: absolute; top: -8px; right: -8px; font-size: 11px; font-weight: 800; color: var(--bed); }
+  .zzz span { display: inline-block; animation: float 2s infinite; }
+  .zzz span:nth-child(2) { animation-delay: .3s; }
+  .zzz span:nth-child(3) { animation-delay: .6s; }
+  @keyframes float { 0%,100% { transform: translateY(0); opacity: .4 } 50% { transform: translateY(-4px); opacity: 1 } }
+  .who { line-height: 1.2; min-width: 0; }
+  .who b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who small { color: var(--muted); font-size: 12px; }
+
+  /* Badges */
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; letter-spacing: .02em; white-space: nowrap; }
+  .lvl-Mild { color: var(--mild); background: var(--mild-soft); }
+  .lvl-Moderate { color: var(--moderate); background: var(--moderate-soft); }
+  .lvl-Severe { color: var(--severe); background: var(--severe-soft); }
+  .st-Awake { color: var(--awake); background: var(--awake-soft); }
+  .st-AsleepInHallway { color: var(--hall); background: var(--hall-soft); }
+  .st-AsleepInBed { color: var(--bed); background: var(--bed-soft); }
+  .st-Discharged { color: var(--muted); background: var(--panel-2); }
+  .st-Available { color: var(--mild); background: var(--mild-soft); }
+  .st-Occupied { color: var(--bed); background: var(--panel); }
+
+  /* Patients */
+  .patients { display: grid; gap: 10px; }
+  .patient {
+    display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+    padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2);
+  }
+  .patient .info { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .patient .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  button {
+    font: inherit; font-size: 13px; font-weight: 600; border-radius: 10px; padding: 7px 12px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+    transition: transform .1s, background .2s, border-color .2s;
+  }
+  button:hover:not(:disabled) { border-color: var(--brand); }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  select {
+    font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+
+  /* Staff */
+  .staff { display: grid; gap: 10px; }
+  .member {
+    display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--panel-2);
+  }
+  .member.off { opacity: .55; }
+  .member .ep { margin-left: auto; text-align: right; }
+  .member .ep b { font-size: 20px; display: block; line-height: 1; }
+  .member .ep small { color: var(--muted); font-size: 11px; }
+  .role-Doctor { color: var(--brand); background: var(--brand-soft); }
+  .role-Orderly { color: #0d9488; background: color-mix(in srgb, #14b8a6 18%, transparent); }
+
+  /* Severe report */
+  .severe-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .severe-row:last-child { border-bottom: none; }
+  .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, #f97316, var(--severe)); border-radius: 99px; transition: width .4s; }
+  .severe-row b { width: 22px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Episode log */
+  .log { max-height: 360px; overflow-y: auto; display: grid; gap: 8px; padding-right: 4px; }
+  .event {
+    display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 10px; border-radius: 10px;
+    background: var(--panel-2); border-left: 3px solid var(--bed); font-size: 13px;
+  }
+  .event.hall { border-left-color: var(--hall); }
+  .event .eid { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .event small { color: var(--muted); }
+  .empty-msg { color: var(--muted); font-size: 14px; text-align: center; padding: 18px 0; }
+
+  /* Toasts */
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 10px; z-index: 10; max-width: min(420px, calc(100vw - 32px)); }
+  .toast {
+    background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--mild);
+    border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); font-size: 14px; animation: drop .25s ease-out;
+  }
+  .toast.err { border-left-color: var(--severe); }
+
+  @media (max-width: 1000px) {
+    .grid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .patient { grid-template-columns: 1fr; }
+    .actions { justify-content: flex-start; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </div>
+    <div>
+      <h1 id="name">My Hospital</h1>
+      <div class="subtitle">Narcolepsy ward &middot; live dashboard</div>
+    </div>
+    <div class="spacer"></div>
+    <a href="/" style="color:var(--brand);font-weight:600;text-decoration:none">🎮 Back to the game</a>
+    <div class="clock" id="clock"></div>
+    <label class="switch auto-box" title="Same as Start / Pause in the game">
+      <span class="live-dot" id="liveDot"></span>
+      Running
+      <input type="checkbox" id="auto">
+      <span class="track"></span>
+    </label>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <div class="grid">
+    <div class="col">
+      <section class="panel">
+        <h2>🛏️ Rooms <span class="count" id="roomCount"></span></h2>
+        <div class="rooms" id="rooms"></div>
+      </section>
+
+      <section class="panel">
+        <h2>🚨 Asleep in the hallway <span class="count" id="hallCount"></span></h2>
+        <div class="hallway" id="hallway"></div>
+      </section>
+
+      <section class="panel">
+        <h2>🧑‍🤝‍🧑 Patients
+          <span class="right">Attack location
+            <select id="location">
+              <option value="">Random</option>
+              <option>Cafeteria</option>
+              <option>Waiting room</option>
+              <option>Pharmacy</option>
+              <option>Elevator</option>
+            </select>
+          </span>
+        </h2>
+        <div class="patients" id="patients"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel">
+        <h2>🩺 Staff on shift</h2>
+        <div class="staff" id="staff"></div>
+      </section>
+
+      <section class="panel">
+        <h2>⚠️ Severe report <span class="right">episodes today</span></h2>
+        <div id="severe"></div>
+      </section>
+
+      <section class="panel">
+        <h2>📋 Episode log <span class="count" id="epCount"></span></h2>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const LOCATIONS = ["Cafeteria", "Waiting room", "Pharmacy", "Elevator"];
+const COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0ea5e9", "#84cc16", "#ef4444"];
+const STATE_LABEL = { Awake: "Awake", AsleepInHallway: "Asleep · hallway", AsleepInBed: "Asleep · in bed", Discharged: "Discharged" };
+let state = null;
+
+const $ = (id) => document.getElementById(id);
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function initials(name) {
+  return name.replace(/^(Dr\.|Dra\.)\s*/, "").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function avatar(p, sleeping) {
+  const n = [...p.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const zzz = sleeping ? '<span class="zzz"><span>z</span><span>z</span><span>z</span></span>' : "";
+  return `<div class="avatar" style="background:${COLORS[n % COLORS.length]}">${esc(initials(p.name))}${zzz}</div>`;
+}
+
+function patientById(id) {
+  return state.patients.find((p) => p.id === id);
+}
+
+async function post(path, body) {
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json();
+    toast(data.message, data.ok);
+  } catch (e) {
+    toast("Could not reach the server.", false);
+  }
+  refresh();
+}
+
+function toast(msg, ok) {
+  const t = document.createElement("div");
+  t.className = "toast" + (ok ? "" : " err");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+function attack(id) {
+  const loc = $("location").value || LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+  post("/api/attack", { patientId: id, location: loc });
+}
+
+function render() {
+  const s = state;
+  $("name").textContent = s.name;
+  $("auto").checked = s.running;
+  $("liveDot").classList.toggle("on", s.running);
+
+  const awake = s.patients.filter((p) => p.state === "Awake").length;
+  const hall = s.patients.filter((p) => p.state === "AsleepInHallway");
+  const inBed = s.patients.filter((p) => p.state === "AsleepInBed").length;
+  const free = s.rooms.filter((r) => r.state === "Available").length;
+  const stats = [
+    ["☀️", "var(--awake-soft)", awake, "Awake"],
+    ["🚨", "var(--hall-soft)", hall.length, "In the hallway"],
+    ["💤", "var(--bed-soft)", inBed, "Sleeping in bed"],
+    ["🚪", "var(--mild-soft)", `${free}/${s.rooms.length}`, "Free rooms"],
+    ["📋", "var(--brand-soft)", s.episodes.length, "Episodes"],
+  ];
+  $("stats").innerHTML = stats.map(([icon, bg, num, lbl]) =>
+    `<div class="stat"><div class="icon" style="background:${bg}">${icon}</div><div><div class="num">${num}</div><div class="lbl">${lbl}</div></div></div>`).join("");
+
+  $("roomCount").textContent = `${s.rooms.length - free} occupied`;
+  $("rooms").innerHTML = s.rooms.map((r) => {
+    const beds = [];
+    for (let i = 0; i < r.capacity; i++) {
+      const p = r.occupants[i] && patientById(r.occupants[i]);
+      beds.push(p
+        ? `<div class="bed full">${avatar(p, true)}<div class="who"><b>${esc(p.name)}</b><small>since attack at ${esc(p.location)}</small></div></div>`
+        : `<div class="bed"><span class="empty">Empty bed</span></div>`);
+    }
+    return `<div class="room ${r.state === "Occupied" ? "occupied" : ""}">
+      <div class="top"><span class="rid">${esc(r.id)}</span><span class="badge st-${r.state}">${r.state}</span></div>${beds.join("")}</div>`;
+  }).join("");
+
+  $("hallCount").textContent = hall.length;
+  $("hallway").innerHTML = hall.length
+    ? hall.map((p) => `<div class="sleeper">${avatar(p, true)}<div class="who"><b>${esc(p.name)}</b><small>${esc(p.location)}</small></div>
+        <button class="primary" onclick="post('/api/assign',{patientId:'${p.id}'})">Move to room</button></div>`).join("")
+    : '<span class="none">Nobody is sleeping in the hallway.</span>';
+
+  $("patients").innerHTML = s.patients.map((p) => {
+    const asleep = p.state.startsWith("Asleep");
+    return `<div class="patient">
+      <div class="info">${avatar(p, asleep)}
+        <div class="who"><b>${esc(p.name)}</b><small>${esc(p.id)} · ${p.age} years${p.roomId ? " · room " + esc(p.roomId) : ""}</small>
+          <div class="tags"><span class="badge lvl-${p.level}">${p.level}</span><span class="badge st-${p.state}">${STATE_LABEL[p.state] || p.state}</span></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button onclick="attack('${p.id}')" ${p.state !== "Awake" ? "disabled" : ""}>💤 Sleep attack</button>
+        <button onclick="post('/api/wake',{patientId:'${p.id}'})" ${asleep ? "" : "disabled"}>☀️ Wake up</button>
+      </div></div>`;
+  }).join("");
+
+  $("staff").innerHTML = s.staff.map((a) => `
+    <div class="member ${a.available ? "" : "off"}">
+      ${avatar(a, false)}
+      <div class="who"><b>${esc(a.name)}</b><span class="badge role-${a.role}">${a.role}</span></div>
+      <div class="ep"><b>${a.episodes}</b><small>episodes</small></div>
+      <label class="switch" title="On duty"><input type="checkbox" ${a.available ? "checked" : ""}
+        onchange="post('/api/staff',{staffId:'${a.id}',on:this.checked})"><span class="track"></span></label>
+    </div>`).join("");
+
+  const severe = s.patients.filter((p) => p.id in s.severe);
+  const max = Math.max(1, ...severe.map((p) => s.severe[p.id]));
+  $("severe").innerHTML = severe.length
+    ? severe.map((p) => `<div class="severe-row">${avatar(p, false)}<div class="who" style="width:150px"><b>${esc(p.name)}</b><small>${esc(p.id)}</small></div>
+        <div class="bar"><i style="width:${(s.severe[p.id] / max) * 100}%"></i></div><b>${s.severe[p.id]}</b></div>`).join("")
+    : '<div class="empty-msg">No severe patients.</div>';
+
+  $("epCount").textContent = s.episodes.length;
+  $("log").innerHTML = s.episodes.length
+    ? [...s.episodes].reverse().map((e) => `<div class="event ${e.roomId ? "" : "hall"}">
+        <span class="eid">${esc(e.id)}</span>
+        <div><b>${esc(e.patientName)}</b> fell asleep at ${esc(e.location)}<br>
+        <small>${esc(e.time)} · attended by ${esc(e.attendedBy)} · ${e.roomId ? "room " + esc(e.roomId) : "no free room, stayed in the hallway"}</small></div></div>`).join("")
+    : '<div class="empty-msg">No episodes yet. Trigger a sleep attack to start.</div>';
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/api/state");
+    state = await res.json();
+    state.patients ||= []; state.staff ||= []; state.rooms ||= []; state.episodes ||= []; state.severe ||= {};
+    state.rooms.forEach((r) => (r.occupants ||= []));
+    render();
+  } catch (e) { /* server stopped; keep the last view */ }
+}
+
+$("auto").addEventListener("change", (e) => post("/api/run", { on: e.target.checked }));
+setInterval(() => ($("clock").textContent = new Date().toLocaleTimeString()), 1000);
+setInterval(refresh, 3000);
+refresh();
+</script>
+</body>
+</html>
